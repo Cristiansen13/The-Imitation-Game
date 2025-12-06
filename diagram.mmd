@@ -1,0 +1,67 @@
+flowchart LR
+
+%% ==== Grupuri ====
+subgraph Users
+    U[Utilizatori]
+end
+
+subgraph Front
+    C["chat-service"]
+end
+
+subgraph Auth
+    A["auth-server\n(Keycloak)"]
+end
+
+subgraph DBs
+    M["db-master\n(Postgres)"]
+    R["read-replica-db\n(Postgres Replica)"]
+end
+
+subgraph Infra
+    RL["rate-limiter"]
+    REDIS["redis\n(pub/sub + rate counters)"]
+    REP["reporting-service"]
+end
+
+%% ==== Flux de Bază ====
+U == WebSocket ==> C
+U -- HTTP (login) --> A
+
+C -- Validate Token --> A
+
+C -- R/W (JPA) --> M
+
+%% ==== Replica DB ====
+M -- Replication --> R
+
+%% ==== Rate Limiting ====
+C -- Rate Check --> RL
+RL -- Counters --> REDIS
+
+%% ==== Pub/Sub pentru replici ====
+C <--> REDIS
+
+%% ==== Reporting ====
+C -- Trigger reports --> REP
+REP -- Read-Only --> R
+
+%% ==== Keycloak DB ====
+A -- Store Config/Users --> M
+
+
+%% ==== Stil ====
+classDef users fill:#f9f,stroke:#333,stroke-width:1px,color:#000
+classDef front fill:#ccf,stroke:#333,stroke-width:1px,color:#000
+classDef auth fill:#cfc,stroke:#333,stroke-width:1px,color:#000
+classDef db fill:#ffd,stroke:#333,stroke-width:1px,color:#000
+classDef infra fill:#eee,stroke:#333,stroke-width:1px,color:#000
+
+class U users
+class C front
+class A auth
+class M db
+class R db
+class RL infra
+class REDIS infra
+class REP infra
