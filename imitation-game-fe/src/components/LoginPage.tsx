@@ -1,0 +1,237 @@
+import { useState } from 'react';
+import { motion } from 'motion/react';
+import { Brain, Lock, User, Shield } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+
+interface LoginPageProps {
+  onLogin: (username: string) => void;
+}
+
+export function LoginPage({ onLogin }: LoginPageProps) {
+  const { login } = useAuth();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showLocalLogin, setShowLocalLogin] = useState(false);
+
+  const handleKeycloakLogin = () => {
+    login();
+  };
+
+  const handleLocalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (username.trim()) {
+      onLogin(username);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Animated background */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute inset-0 opacity-20">
+          {[...Array(20)].map((_, i) => (
+            <motion.div
+              key={i}
+              className="absolute text-cyan-500/30 font-mono"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+              }}
+              animate={{
+                y: [0, -100],
+                opacity: [0, 0.5, 0],
+              }}
+              transition={{
+                duration: 3 + Math.random() * 2,
+                repeat: Infinity,
+                delay: Math.random() * 2,
+              }}
+            >
+              {Math.random() > 0.5 ? '01010101' : '11001010'}
+            </motion.div>
+          ))}
+        </div>
+        
+        {/* Grid pattern */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-20" />
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="relative z-10 w-full max-w-6xl grid md:grid-cols-2 gap-8 items-center"
+      >
+        {/* Left side - Branding and info */}
+        <div className="space-y-6">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+            className="space-y-4"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-xl shadow-lg shadow-cyan-500/50">
+                <Brain className="w-8 h-8 text-white" />
+              </div>
+              <h1 className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">
+                The Imitation Game
+              </h1>
+            </div>
+            
+            <p className="text-slate-400">
+              A social deduction game of psychology and analysis
+            </p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.4 }}
+            className="space-y-4"
+          >
+            <h2 className="text-cyan-400">How does it work?</h2>
+            
+            <div className="space-y-3">
+              <div className="flex gap-3 items-start">
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center flex-shrink-0">
+                  <span className="text-cyan-400">1</span>
+                </div>
+                <p className="text-slate-400">
+                  Join a chat room with 7 participants
+                </p>
+              </div>
+              
+              <div className="flex gap-3 items-start">
+                <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center flex-shrink-0">
+                  <span className="text-purple-400">2</span>
+                </div>
+                <p className="text-slate-400">
+                  One participant is controlled by AI
+                </p>
+              </div>
+              
+              <div className="flex gap-3 items-start">
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center flex-shrink-0">
+                  <span className="text-cyan-400">3</span>
+                </div>
+                <p className="text-slate-400">
+                  Chat and analyze the behavior of others
+                </p>
+              </div>
+              
+              <div className="flex gap-3 items-start">
+                <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center flex-shrink-0">
+                  <span className="text-purple-400">4</span>
+                </div>
+                <p className="text-slate-400">
+                  Vote and eliminate who you think is the AI
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Right side - Login form */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.3 }}
+          className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-8 shadow-2xl"
+        >
+          <div className="space-y-6">
+            <div className="text-center space-y-2">
+              <h2 className="text-white">Sign In</h2>
+              <p className="text-slate-400">Connect to play</p>
+            </div>
+
+            {!showLocalLogin ? (
+              <div className="space-y-4">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleKeycloakLogin}
+                  className="w-full bg-gradient-to-r from-cyan-500 to-purple-600 text-white rounded-xl py-3 shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 transition-all flex items-center justify-center gap-2"
+                >
+                  <Shield className="w-5 h-5" />
+                  Sign In with Keycloak
+                </motion.button>
+                
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-700"></div>
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-2 bg-slate-900/50 text-slate-500">or</span>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => setShowLocalLogin(true)}
+                  className="w-full border border-slate-700 text-slate-300 rounded-xl py-3 hover:border-cyan-500/50 hover:text-cyan-400 transition-all"
+                >
+                  Use Local Login (Dev)
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleLocalSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-slate-300">Username</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="w-full bg-slate-800/50 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
+                      placeholder="Enter your username"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-slate-300">Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full bg-slate-800/50 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
+                      placeholder="Enter your password"
+                    />
+                  </div>
+                </div>
+
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-cyan-500 to-purple-600 text-white rounded-xl py-3 shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 transition-all"
+                >
+                  Sign In
+                </motion.button>
+                
+                <button
+                  type="button"
+                  onClick={() => setShowLocalLogin(false)}
+                  className="w-full text-slate-500 hover:text-cyan-400 transition-all"
+                >
+                  ← Back to SSO Login
+                </button>
+              </form>
+            )}
+
+            <div className="text-center">
+              <p className="text-slate-500">
+                Authentication via{' '}
+                <span className="text-cyan-400">Keycloak SSO</span>
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </div>
+  );
+}

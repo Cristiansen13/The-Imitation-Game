@@ -1,0 +1,151 @@
+version: "3.9"
+
+services:
+
+  auth-server:
+    image: imitation-game-keycloak:1.0
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "8085:8080"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  db-master:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: main
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pgdata-master:/var/lib/postgresql/data
+    command: |
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=3
+      -c max_replication_slots=3
+      -c hot_standby=on
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  read-replica-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: main
+      PGUSER: user
+      PGPASSWORD: pass
+    volumes:
+      - pgdata-replica:/var/lib/postgresql/data
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  chat-service:
+    image: chat-service:1.0
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: db-master
+      DB_PORT: 5432
+      DB_NAME: main
+      DB_USER: user
+      DB_PASS: pass
+      KEYCLOAK_URL: http://auth-server:8080
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RATE_LIMITER_URL: http://rate-limiter:8082
+    networks:
+      - backend
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 10s
+
+  rate-limiter:
+    image: rate-limiter:1.0
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  reporting-service:
+    image: reporting-service:1.0
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: read-replica-db
+      DB_PORT: 5432
+      DB_NAME: main
+      DB_USER: user
+      DB_PASS: pass
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  frontend:
+    image: imitation-game-fe:1.0
+    ports:
+      - "3000:80"
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+networks:
+  backend:
+    driver: overlay
+
+volumes:
+  keycloak-data:
+  pgdata-master:
+  pgdata-replica:

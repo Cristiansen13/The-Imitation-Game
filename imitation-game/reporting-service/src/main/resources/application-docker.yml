@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: reporting-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:read-replica-db}:${DB_PORT:5432}/${DB_NAME:main}
+    username: ${DB_USER:user}
+    password: ${DB_PASS:pass}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://auth-server:8080/realms/imitation-game/protocol/openid-connect/certs
+
+server:
+  port: 8083

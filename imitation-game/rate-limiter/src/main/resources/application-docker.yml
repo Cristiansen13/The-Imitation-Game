@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: rate-limiter
+  data:
+    redis:
+      host: redis
+      port: 6379
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://auth-server:8080/realms/imitation-game/protocol/openid-connect/certs
+
+server:
+  port: 8082
+
+rate-limiter:
+  requests-per-minute: 60
+  window-size-seconds: 60
