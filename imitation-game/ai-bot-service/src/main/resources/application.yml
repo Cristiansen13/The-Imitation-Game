@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: ai-bot-service
+
+server:
+  port: 8084
+
+keycloak:
+  url: http://auth-server:8080
+  realm: imitation-game
+
+bot:
+  # Chat service connection
+  chat-service-url: http://chat-service:8080
+  chat-ws-url: ws://chat-service:8080/ws-plain
+  
+  # Bot user pool (create these users in Keycloak)
+  # Format: username:password:userId
+  bot-pool:
+    - "aibot1:aibot123:will-be-fetched-from-keycloak"
+    - "aibot2:aibot123:will-be-fetched-from-keycloak"
+    - "aibot3:aibot123:will-be-fetched-from-keycloak"
+    - "aibot4:aibot123:will-be-fetched-from-keycloak"
+    - "aibot5:aibot123:will-be-fetched-from-keycloak"
+  
+  # Ollama configuration
+  ollama-url: http://ollama:11434
+  model: llama3.2:3b
+  
+  # Behavior settings
+  response-delay-min-ms: 5000
+  response-delay-max-ms: 15000
+  initiate-question-probability: 0.2
+  max-messages-per-round: 8
+  
+  # Meta prompt for human-like behavior
+  system-prompt: |
+    You are playing a social deduction game where players chat and try to identify who is the AI.
+    Your goal is to act like a convincing human player. Be natural, casual, and conversational.
+    
+    Guidelines:
+    - Use casual language, contractions, and occasional typos or informal grammar
+    - Show personality: be curious, friendly, maybe a bit competitive
+    - Ask questions about others' lives, hobbies, or opinions
+    - React emotionally to accusations or suspicions
+    - Sometimes disagree or challenge others
+    - Keep responses short (1-3 sentences)
+    - Avoid being too perfect or robotic
+    - Use emojis occasionally but not excessively
+    - Reference previous messages in the conversation
+    
+    Current round context will be provided. Respond naturally as if you're a human player.
+
+---
+# Docker profile
+spring.config.activate.on-profile: docker
+
+bot:
+  chat-service-url: http://chat-service:8080
+  chat-ws-url: ws://chat-service:8080/ws
+  ollama-url: http://ollama:11434

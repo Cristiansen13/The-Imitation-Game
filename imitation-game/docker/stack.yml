@@ -72,6 +72,18 @@ services:
       restart_policy:
         condition: on-failure
 
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    command: ["serve"]
+
   chat-service:
     image: chat-service:1.0
     ports:
@@ -84,6 +96,7 @@ services:
       DB_USER: user
       DB_PASS: pass
       KEYCLOAK_URL: http://auth-server:8080
+      KEYCLOAK_PUBLIC_URL: http://auth-server:8080
       REDIS_HOST: redis
       REDIS_PORT: 6379
       RATE_LIMITER_URL: http://rate-limiter:8082
@@ -141,6 +154,22 @@ services:
       restart_policy:
         condition: on-failure
 
+  ai-bot-service:
+    image: ai-bot-service:1.0
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      - chat-service
+      - ollama
+
 networks:
   backend:
     driver: overlay
@@ -149,3 +178,4 @@ volumes:
   keycloak-data:
   pgdata-master:
   pgdata-replica:
+  ollama-data:

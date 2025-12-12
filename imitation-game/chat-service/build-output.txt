@@ -13,11 +13,11 @@
 [INFO] Copying 0 resource from src\main\resources to target\classes
 [INFO] 
 [INFO] --- compiler:3.13.0:compile (default-compile) @ chat-service ---
-[INFO] Compiling 13 source files with javac [forked debug parameters release 21] to target\classes
+[INFO] Compiling 23 source files with javac [forked debug parameters release 21] to target\classes
 [WARNING] Unable to autodetect 'javac' path, using 'javac' from the environment.
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------
-[INFO] Total time:  3.756 s
-[INFO] Finished at: 2025-12-07T03:23:13+02:00
+[INFO] Total time:  6.994 s
+[INFO] Finished at: 2025-12-12T16:44:10+02:00
 [INFO] ------------------------------------------------------------------------

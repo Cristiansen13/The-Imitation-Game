@@ -5,11 +5,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+
+import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 public class JwtConfig {
@@ -17,19 +20,48 @@ public class JwtConfig {
     @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
     private String jwkSetUri;
 
-    @Value("${keycloak.public-issuer}")
-    private String publicIssuer;
-
     @Bean
     public JwtDecoder jwtDecoder() {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
 
+        // Accept tokens from both external (localhost:8085) and internal (auth-server:8080) Keycloak URLs
+        List<String> allowedIssuers = Arrays.asList(
+            "http://localhost:8085/realms/imitation-game",
+            "http://auth-server:8080/realms/imitation-game"
+        );
+
         OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(
                 new JwtTimestampValidator(),
-                new JwtIssuerValidator(publicIssuer)
+                new MultiIssuerValidator(allowedIssuers)
         );
 
         decoder.setJwtValidator(validator);
         return decoder;
+    }
+
+    /**
+     * Custom validator that accepts multiple issuers
+     */
+    private static class MultiIssuerValidator implements OAuth2TokenValidator<Jwt> {
+        private final List<String> allowedIssuers;
+
+        public MultiIssuerValidator(List<String> allowedIssuers) {
+            this.allowedIssuers = allowedIssuers;
+        }
+
+        @Override
+        public OAuth2TokenValidatorResult validate(Jwt jwt) {
+            String issuer = jwt.getIssuer() != null ? jwt.getIssuer().toString() : null;
+            if (issuer != null && allowedIssuers.contains(issuer)) {
+                return OAuth2TokenValidatorResult.success();
+            }
+            return OAuth2TokenValidatorResult.failure(
+                new org.springframework.security.oauth2.core.OAuth2Error(
+                    "invalid_token",
+                    "Invalid issuer: " + issuer,
+                    null
+                )
+            );
+        }
     }
 }

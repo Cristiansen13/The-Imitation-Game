@@ -130,10 +130,13 @@ public class GameService {
             throw new IllegalStateException("Need at least " + MIN_PLAYERS + " players to start");
         }
 
-        // Randomly assign one player as the AI
+        // Find the AI bot player (username starts with "aibot")
         List<RoomPlayer> players = room.getPlayers();
-        int aiIndex = new Random().nextInt(players.size());
-        RoomPlayer aiPlayer = players.get(aiIndex);
+        RoomPlayer aiPlayer = players.stream()
+                .filter(p -> p.getUsername() != null && p.getUsername().startsWith("aibot"))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("AI bot not found in room"));
+        
         aiPlayer.setAI(true);
         room.setAiPlayerId(aiPlayer.getOderId());
 
@@ -145,7 +148,6 @@ public class GameService {
         gameRoomRepository.save(room);
 
         // Broadcast GAME_STARTED event to room topic with AI player ID
-        // Each client will check if their oderId matches aiPlayerId to determine if they are AI
         broadcastToRoom(roomId, GameEvent.gameStartedWithAiId(roomId, room.getCurrentRound(), room.getMaxRounds(), aiPlayer.getOderId()));
         
         // Broadcast generic round started event to room

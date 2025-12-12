@@ -111,6 +111,81 @@
         }
       ],
       "realmRoles": ["user"]
+    },
+    {
+      "username": "aibot1",
+      "enabled": true,
+      "email": "aibot1@imitation-game.local",
+      "firstName": "AI",
+      "lastName": "Bot One",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "aibot123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user"]
+    },
+    {
+      "username": "aibot2",
+      "enabled": true,
+      "email": "aibot2@imitation-game.local",
+      "firstName": "AI",
+      "lastName": "Bot Two",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "aibot123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user"]
+    },
+    {
+      "username": "aibot3",
+      "enabled": true,
+      "email": "aibot3@imitation-game.local",
+      "firstName": "AI",
+      "lastName": "Bot Three",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "aibot123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user"]
+    },
+    {
+      "username": "aibot4",
+      "enabled": true,
+      "email": "aibot4@imitation-game.local",
+      "firstName": "AI",
+      "lastName": "Bot Four",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "aibot123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user"]
+    },
+    {
+      "username": "aibot5",
+      "enabled": true,
+      "email": "aibot5@imitation-game.local",
+      "firstName": "AI",
+      "lastName": "Bot Five",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "aibot123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user"]
     }
   ]
 }
