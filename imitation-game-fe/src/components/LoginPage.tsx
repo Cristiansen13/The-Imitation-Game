@@ -1,27 +1,17 @@
-import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Brain, Lock, User, Shield } from 'lucide-react';
+import { Brain, UserPlus, Shield } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { register } from '../services/auth';
 
-interface LoginPageProps {
-  onLogin: (username: string) => void;
-}
-
-export function LoginPage({ onLogin }: LoginPageProps) {
+export function LoginPage() {
   const { login } = useAuth();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showLocalLogin, setShowLocalLogin] = useState(false);
 
   const handleKeycloakLogin = () => {
     login();
   };
 
-  const handleLocalSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (username.trim()) {
-      onLogin(username);
-    }
+  const handleRegister = () => {
+    register();
   };
 
   return (
@@ -141,87 +131,40 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         >
           <div className="space-y-6">
             <div className="text-center space-y-2">
-              <h2 className="text-white">Sign In</h2>
-              <p className="text-slate-400">Connect to play</p>
+              <h2 className="text-white">Welcome</h2>
+              <p className="text-slate-400">Sign in or create an account to play</p>
             </div>
 
-            {!showLocalLogin ? (
-              <div className="space-y-4">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleKeycloakLogin}
-                  className="w-full bg-gradient-to-r from-cyan-500 to-purple-600 text-white rounded-xl py-3 shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 transition-all flex items-center justify-center gap-2"
-                >
-                  <Shield className="w-5 h-5" />
-                  Sign In with Keycloak
-                </motion.button>
-                
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-slate-700"></div>
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-2 bg-slate-900/50 text-slate-500">or</span>
-                  </div>
+            <div className="space-y-4">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleKeycloakLogin}
+                className="w-full bg-gradient-to-r from-cyan-500 to-purple-600 text-white rounded-xl py-3 shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 transition-all flex items-center justify-center gap-2"
+              >
+                <Shield className="w-5 h-5" />
+                Sign In
+              </motion.button>
+              
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-700"></div>
                 </div>
-                
-                <button
-                  onClick={() => setShowLocalLogin(true)}
-                  className="w-full border border-slate-700 text-slate-300 rounded-xl py-3 hover:border-cyan-500/50 hover:text-cyan-400 transition-all"
-                >
-                  Use Local Login (Dev)
-                </button>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-slate-900/50 text-slate-500">or</span>
+                </div>
               </div>
-            ) : (
-              <form onSubmit={handleLocalSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-slate-300">Username</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="w-full bg-slate-800/50 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
-                      placeholder="Enter your username"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-slate-300">Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-slate-800/50 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all"
-                      placeholder="Enter your password"
-                    />
-                  </div>
-                </div>
-
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-cyan-500 to-purple-600 text-white rounded-xl py-3 shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 transition-all"
-                >
-                  Sign In
-                </motion.button>
-                
-                <button
-                  type="button"
-                  onClick={() => setShowLocalLogin(false)}
-                  className="w-full text-slate-500 hover:text-cyan-400 transition-all"
-                >
-                  ← Back to SSO Login
-                </button>
-              </form>
-            )}
+              
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleRegister}
+                className="w-full border-2 border-cyan-500/50 bg-slate-800/30 text-cyan-400 rounded-xl py-3 hover:border-cyan-500 hover:bg-cyan-500/10 transition-all flex items-center justify-center gap-2"
+              >
+                <UserPlus className="w-5 h-5" />
+                Create Account
+              </motion.button>
+            </div>
 
             <div className="text-center">
               <p className="text-slate-500">

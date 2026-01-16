@@ -130,12 +130,18 @@ public class GameService {
             throw new IllegalStateException("Need at least " + MIN_PLAYERS + " players to start");
         }
 
-        // Find the AI bot player (username starts with "aibot")
+        // Find the AI bot player (username starts with "aibot"), or randomly select one
         List<RoomPlayer> players = room.getPlayers();
         RoomPlayer aiPlayer = players.stream()
                 .filter(p -> p.getUsername() != null && p.getUsername().startsWith("aibot"))
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException("AI bot not found in room"));
+                .orElse(null);
+        
+        // If no bot found, randomly select a player to be the AI
+        if (aiPlayer == null) {
+            int randomIndex = (int) (Math.random() * players.size());
+            aiPlayer = players.get(randomIndex);
+        }
         
         aiPlayer.setAI(true);
         room.setAiPlayerId(aiPlayer.getOderId());
@@ -386,10 +392,25 @@ public class GameService {
             roomPlayerRepository.delete(player);
             
             if (room.getPlayers().isEmpty()) {
+                // No players left, delete room
                 gameRoomRepository.delete(room);
             } else {
-                gameRoomRepository.save(room);
-                broadcastToRoom(roomId, GameEvent.playerLeft(roomId, oderId, player.getUsername()));
+                // Check if only bots remain
+                long humanPlayerCount = room.getPlayers().stream()
+                        .filter(p -> p.getUsername() == null || !p.getUsername().startsWith("aibot"))
+                        .count();
+                
+                if (humanPlayerCount == 0) {
+                    // Only bots left, remove all bots and delete room
+                    room.getPlayers().forEach(botPlayer -> roomPlayerRepository.delete(botPlayer));
+                    gameRoomRepository.delete(room);
+                    // Broadcast to bots so they disconnect
+                    broadcastToRoom(roomId, GameEvent.playerLeft(roomId, oderId, player.getUsername()));
+                } else {
+                    // Still have human players
+                    gameRoomRepository.save(room);
+                    broadcastToRoom(roomId, GameEvent.playerLeft(roomId, oderId, player.getUsername()));
+                }
             }
         } else {
             // Mark as eliminated if game in progress

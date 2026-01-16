@@ -96,22 +96,6 @@ function AppContent() {
     }
   };
 
-  const handleLogin = (username: string) => {
-    // This is called when using local login (fallback)
-    setUserData({
-      id: 'local-' + username,
-      username,
-      email: '',
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`,
-      rank: 'Detective',
-      gamesPlayed: 0,
-      detectRate: 0,
-      aiWins: 0,
-      kdRatio: 0
-    });
-    setCurrentScreen('dashboard');
-  };
-
   const handleStartGame = () => {
     setCurrentScreen('lobby');
   };
@@ -157,7 +141,7 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {currentScreen === 'login' && (
-        <LoginPage onLogin={handleLogin} />
+        <LoginPage />
       )}
       {currentScreen === 'dashboard' && userData && (
         <Dashboard 

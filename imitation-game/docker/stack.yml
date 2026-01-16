@@ -103,7 +103,7 @@ services:
     networks:
       - backend
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:

@@ -13,6 +13,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Manages bot instances for multiple rooms
@@ -31,6 +34,7 @@ public class RoomBotManager {
     
     private final Map<String, BotPlayer> activeBots = new ConcurrentHashMap<>();
     private final List<BotCredentials> botCredentialsPool = new ArrayList<>();
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     
     public RoomBotManager(BotConfig config, OllamaService ollamaService, ObjectMapper objectMapper, KeycloakAuthService authService) {
         this.config = config;
@@ -87,9 +91,9 @@ public class RoomBotManager {
     }
     
     /**
-     * Check for rooms that need a bot every 5 seconds
+     * Check for rooms that need a bot every 3 seconds (reduced from 5 for faster response)
      */
-    @Scheduled(fixedDelay = 5000, initialDelay = 10000)
+    @Scheduled(fixedDelay = 3000, initialDelay = 5000)
     public void monitorRooms() {
         try {
             // Get an available bot to use its credentials for API access
@@ -132,10 +136,16 @@ public class RoomBotManager {
                 List<Map<String, Object>> players = (List<Map<String, Object>>) room.get("players");
                 
                 // Check if room needs a bot (has 2+ human players, status is WAITING, bot not already present)
+                // Wait for at least 2 players to ensure they have time to establish WebSocket connections
                 if ("WAITING".equals(status) && players != null && players.size() >= 2 && 
                     !activeBots.containsKey(roomId) && !hasBot(players)) {
                     
-                    log.info("Room {} needs a bot. Joining...", roomId);
+                    log.info("Room {} has {} players and needs a bot. Joining immediately...", roomId, players.size());
+                    
+                    // FIXED: Join immediately instead of scheduling with delay
+                    // The delay was causing race conditions where players could join/leave in the meantime
+                    // Players should already have WebSocket connections established by now since they
+                    // joined via REST API first, then subscribed to WebSocket
                     joinRoomAsBot(roomId);
                 }
             }
@@ -191,6 +201,12 @@ public class RoomBotManager {
                 return;
             }
             
+            log.info("Bot {} joined room {} via REST API, connecting WebSocket...", botCreds.getUsername(), roomId);
+            
+            // Small delay to ensure PLAYER_JOINED event is processed by other clients
+            // This gives time for the broadcast to be received before bot starts interacting
+            Thread.sleep(500);
+            
             // Create and connect bot player
             final BotCredentials finalBotCreds = botCreds;
             BotPlayer botPlayer = new BotPlayer(
@@ -206,8 +222,14 @@ public class RoomBotManager {
             botPlayer.connect();
             activeBots.put(roomId, botPlayer);
             
-            log.info("Bot {} successfully joined room {}", botCreds.getUsername(), roomId);
+            log.info("Bot {} successfully joined room {} and connected to WebSocket", botCreds.getUsername(), roomId);
             
+        } catch (InterruptedException e) {
+            log.warn("Bot join interrupted for room {}", roomId);
+            Thread.currentThread().interrupt();
+            if (botCreds != null) {
+                releaseBotCredentials(botCreds.getUsername());
+            }
         } catch (Exception e) {
             log.error("Error joining room {} as bot: {}", roomId, e.getMessage());
             if (botCreds != null) {
@@ -217,17 +239,78 @@ public class RoomBotManager {
     }
     
     /**
-     * Clean up inactive bots
+     * Clean up inactive bots and check for empty/deleted rooms
      */
-    @Scheduled(fixedDelay = 60000)
+    @Scheduled(fixedDelay = 10000)  // Check every 10 seconds
     public void cleanupInactiveBots() {
         activeBots.entrySet().removeIf(entry -> {
+            String roomId = entry.getKey();
             BotPlayer bot = entry.getValue();
+            
+            // Check if WebSocket connection is closed
             if (!bot.isOpen()) {
-                log.info("Removing inactive bot from room {}", entry.getKey());
+                log.info("Removing inactive bot from room {} (connection closed)", roomId);
                 bot.disconnect();
                 return true;
             }
+            
+            // Check if the room still exists and has human players
+            try {
+                // Get an available bot credential to use for API access
+                BotCredentials botCreds = botCredentialsPool.stream().findFirst().orElse(null);
+                if (botCreds == null) {
+                    return false;
+                }
+                
+                String token = authService.getAccessToken(botCreds.getUsername(), botCreds.getPassword());
+                if (token == null) {
+                    return false;
+                }
+                
+                // Try to get the room info
+                Map<String, Object> room = webClient.get()
+                        .uri("/rooms/" + roomId)
+                        .header("Authorization", "Bearer " + token)
+                        .retrieve()
+                        .onStatus(status -> status.is4xxClientError(), 
+                                 clientResponse -> {
+                                     log.info("Room {} no longer exists or is not accessible", roomId);
+                                     return Mono.empty();
+                                 })
+                        .bodyToMono(Map.class)
+                        .onErrorReturn(null)
+                        .block();
+                
+                if (room == null) {
+                    // Room doesn't exist anymore, disconnect bot
+                    log.info("Removing bot from deleted room {}", roomId);
+                    bot.disconnect();
+                    return true;
+                }
+                
+                // Check if room only has bots (no human players)
+                List<Map<String, Object>> players = (List<Map<String, Object>>) room.get("players");
+                if (players != null) {
+                    long humanCount = players.stream()
+                            .filter(p -> {
+                                String username = (String) p.get("username");
+                                return !botCredentialsPool.stream()
+                                        .anyMatch(b -> b.getUsername().equals(username));
+                            })
+                            .count();
+                    
+                    if (humanCount == 0) {
+                        // Only bots left, disconnect
+                        log.info("Removing bot from room {} (no human players left)", roomId);
+                        bot.disconnect();
+                        return true;
+                    }
+                }
+                
+            } catch (Exception e) {
+                log.debug("Error checking room status for {}: {}", roomId, e.getMessage());
+            }
+            
             return false;
         });
     }

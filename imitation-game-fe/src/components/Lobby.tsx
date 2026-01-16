@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Users, Clock, Sparkles, RefreshCw, AlertCircle, LogOut } from 'lucide-react';
 import { roomApi, wsService, GameRoom } from '../services';
@@ -27,6 +27,8 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
   const [canStartGame, setCanStartGame] = useState(false);
   const [timerStartedAt, setTimerStartedAt] = useState<Date | null>(null);
   const [isStartingGame, setIsStartingGame] = useState(false);
+  const [isRoomLeader, setIsRoomLeader] = useState(false);
+  const hasInitialized = useRef(false);
   const LOBBY_DURATION = 30; // seconds - countdown duration once 3+ players
 
   // Debug: Log version to confirm new code is loaded
@@ -47,19 +49,150 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
     setError(null);
     
     try {
-      // Try to join an available room or create a new one
+      console.log('[Lobby] Step 1: Connecting to WebSocket...');
+      // Connect to WebSocket FIRST
+      if (!wsService.isConnected()) {
+        await wsService.connect();
+      }
+      
+      console.log('[Lobby] Step 2: Fetching available rooms to pre-subscribe...');
+      // Get list of available rooms to pre-subscribe
+      const availableRooms = await roomApi.listAvailable();
+      console.log('[Lobby] Available rooms:', availableRooms);
+      
+      // Track if we've already started the game transition
+      let gameStarted = false;
+      
+      // Pre-subscribe to potential room topics (subscribe to all available rooms)
+      const subscriptions: Array<() => void> = [];
+      availableRooms.forEach((room: GameRoom) => {
+        const unsub = wsService.subscribeToGameEvents(room.id, (event) => {
+          console.log('[Lobby] Game event received:', event);
+          switch (event.type) {
+            case 'PLAYER_JOINED':
+              setPlayers(prev => {
+                // Don't add if already exists (check by id)
+                if (prev.some(p => p.id === event.data.oderId)) {
+                  console.log('[Lobby] Player already in list:', event.data.username);
+                  return prev;
+                }
+                console.log('[Lobby] Adding player:', event.data.username);
+                const newPlayers = [...prev, {
+                  id: event.data.oderId,
+                  username: event.data.username,
+                  avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${event.data.username}`,
+                  status: 'connected',
+                }];
+                // If this is the first player being added and it's me, I'm the leader
+                if (prev.length === 0 && event.data.oderId === user?.oderId) {
+                  console.log('[Lobby] I am the room leader (first player)');
+                  setIsRoomLeader(true);
+                }
+                return newPlayers;
+              });
+              break;
+            case 'PLAYER_LEFT':
+              console.log('[Lobby] Player left:', event.data.username);
+              setPlayers(prev => prev.filter(p => p.id !== event.data.oderId));
+              break;
+            case 'GAME_STARTED':
+              if (gameStarted) return; // Prevent duplicate handling
+              gameStarted = true;
+              
+              // Check if current user is the AI by comparing aiPlayerId
+              const aiPlayerId = event.data.aiPlayerId;
+              const isAI = aiPlayerId === user?.oderId;
+              console.log('GAME_STARTED - aiPlayerId:', aiPlayerId, 'myId:', user?.oderId, 'isAI:', isAI);
+              
+              setAssignedRole(isAI ? 'AI' : 'Player');
+              setTimeout(() => {
+                onGameStart(room.id, isAI);
+              }, 2000);
+              break;
+          }
+        });
+        subscriptions.push(unsub);
+      });
+      
+      console.log('[Lobby] Step 3: Joining room...');
+      // Now join the room - we're already subscribed so we won't miss events
       const room = await roomApi.joinAny();
+      console.log('[Lobby] Joined room:', room.id);
       
       setRoomId(room.id);
       
+      // Subscribe to the specific room we joined (if it wasn't in the list)
+      const alreadySubscribed = availableRooms.some((r: GameRoom) => r.id === room.id);
+      if (!alreadySubscribed) {
+        console.log('[Lobby] Subscribing to new room:', room.id);
+        wsService.subscribeToGameEvents(room.id, (event) => {
+          console.log('[Lobby] Game event received:', event);
+          switch (event.type) {
+            case 'PLAYER_JOINED':
+              setPlayers(prev => {
+                if (prev.some(p => p.id === event.data.oderId)) {
+                  console.log('[Lobby] Player already in list:', event.data.username);
+                  return prev;
+                }
+                console.log('[Lobby] Adding player:', event.data.username);
+                return [...prev, {
+                  id: event.data.oderId,
+                  username: event.data.username,
+                  avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${event.data.username}`,
+                  status: 'connected',
+                }];
+              });
+              break;
+            case 'PLAYER_LEFT':
+              console.log('[Lobby] Player left:', event.data.username);
+              setPlayers(prev => prev.filter(p => p.id !== event.data.oderId));
+              break;
+            case 'GAME_STARTED':
+              if (gameStarted) return;
+              gameStarted = true;
+              
+              const aiPlayerId = event.data.aiPlayerId;
+              const isAI = aiPlayerId === user?.oderId;
+              console.log('GAME_STARTED - aiPlayerId:', aiPlayerId, 'myId:', user?.oderId, 'isAI:', isAI);
+              
+              setAssignedRole(isAI ? 'AI' : 'Player');
+              setTimeout(() => {
+                onGameStart(room.id, isAI);
+              }, 2000);
+              break;
+          }
+        });
+      }
+      
+      console.log('[Lobby] Step 4: Setting initial players...');
       // Set initial players from room data
       if (room.players && room.players.length > 0) {
-        setPlayers(room.players.map((p: { oderId: string; username: string; status: string }) => ({
+        const initialPlayers = room.players.map((p: { oderId: string; username: string; status: string }) => ({
           id: p.oderId,
           username: p.username,
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.username}`,
           status: p.status.toLowerCase() as Player['status'],
-        })));
+        }));
+        console.log('[Lobby] Initial players:', initialPlayers);
+        setPlayers(initialPlayers);
+        
+        // Check if game already started (players have 'alive' status)
+        const gameAlreadyStarted = initialPlayers.some(p => p.status === 'alive');
+        if (gameAlreadyStarted && room.aiPlayerId) {
+          console.log('[Lobby] Game already started on join, transitioning immediately. AI:', room.aiPlayerId);
+          const isAI = room.aiPlayerId === user?.oderId;
+          setAssignedRole(isAI ? 'AI' : 'Player');
+          setTimeout(() => {
+            onGameStart(room.id, isAI);
+          }, 500);
+          return; // Skip the rest of initialization
+        }
+        
+        // Check if current user is the room leader (first player to join)
+        const firstPlayer = initialPlayers[0];
+        const amLeader = firstPlayer?.id === user?.oderId;
+        console.log('[Lobby] Am I room leader?', amLeader, 'First player:', firstPlayer?.username);
+        setIsRoomLeader(amLeader);
       } else {
         // Add self if no players list
         setPlayers([{
@@ -68,49 +201,8 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.username || 'You'}`,
           status: 'connected',
         }]);
+        setIsRoomLeader(true); // First player is the leader
       }
-      
-      // Connect to WebSocket
-      await wsService.connect();
-      
-      // Track if we've already started the game transition
-      let gameStarted = false;
-      
-      // Subscribe to game events on room topic
-      wsService.subscribeToGameEvents(room.id, (event) => {
-        console.log('Game event received:', event);
-        switch (event.type) {
-          case 'PLAYER_JOINED':
-            setPlayers(prev => {
-              // Don't add if already exists (check by id)
-              if (prev.some(p => p.id === event.data.oderId)) return prev;
-              return [...prev, {
-                id: event.data.oderId,
-                username: event.data.username,
-                avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${event.data.username}`,
-                status: 'connected',
-              }];
-            });
-            break;
-          case 'PLAYER_LEFT':
-            setPlayers(prev => prev.filter(p => p.id !== event.data.oderId));
-            break;
-          case 'GAME_STARTED':
-            if (gameStarted) return; // Prevent duplicate handling
-            gameStarted = true;
-            
-            // Check if current user is the AI by comparing aiPlayerId
-            const aiPlayerId = event.data.aiPlayerId;
-            const isAI = aiPlayerId === user?.oderId;
-            console.log('GAME_STARTED - aiPlayerId:', aiPlayerId, 'myId:', user?.oderId, 'isAI:', isAI);
-            
-            setAssignedRole(isAI ? 'AI' : 'Player');
-            setTimeout(() => {
-              onGameStart(room.id, isAI);
-            }, 2000);
-            break;
-        }
-      });
       
       setIsLoading(false);
       
@@ -143,7 +235,14 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
       return;
     }
     
-    console.log('[Lobby] Starting game for room:', roomId);
+    // Double-check: if any player has status 'alive', game already started
+    const gameAlreadyStarted = players.some(p => p.status === 'alive');
+    if (gameAlreadyStarted) {
+      console.log('[Lobby] Game already started (detected from player status), skipping start request');
+      return;
+    }
+    
+    console.log('[Lobby] Room leader starting game for room:', roomId);
     setIsStartingGame(true);
     try {
       const result = await roomApi.startGame(roomId);
@@ -156,7 +255,7 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
       // Don't show error - the GAME_STARTED event should arrive via WebSocket
     }
     // Don't reset isStartingGame - we're waiting for WebSocket event
-  }, [roomId, canStartGame, isStartingGame, assignedRole]);
+  }, [roomId, canStartGame, isStartingGame, assignedRole, players]);
 
   const handleLeaveRoom = useCallback(async () => {
     if (roomId) {
@@ -172,13 +271,25 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
     }
   }, [roomId, onLeave]);
 
+  // Initialize once on mount only
   useEffect(() => {
-    createOrJoinRoom();
+    if (hasInitialized.current) {
+      console.log('[Lobby] Already initialized, skipping');
+      return;
+    }
     
+    hasInitialized.current = true;
+    console.log('[Lobby] First initialization');
+    createOrJoinRoom();
+  }, []); // Empty deps - run only once
+  
+  // Cleanup on unmount only
+  useEffect(() => {
     return () => {
+      console.log('[Lobby] Component unmounting, disconnecting WebSocket');
       wsService.disconnect();
     };
-  }, [createOrJoinRoom]);
+  }, []);
 
   // Timer effect - only runs when 3+ players (timerStartedAt is set)
   useEffect(() => {
@@ -188,17 +299,17 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
       const remaining = calculateTimeLeft(timerStartedAt);
       setTimeLeft(remaining);
       
-      if (remaining === 0 && canStartGame && roomId && !isStartingGame) {
+      if (remaining === 0 && canStartGame && roomId && !isStartingGame && isRoomLeader) {
         clearInterval(timer);
-        // All players try to start - the first one succeeds, others get 400 which is fine
-        // The GAME_STARTED event will transition everyone
-        console.log('[Lobby] Timer reached 0, attempting to start game');
+        // Only the room leader (first player) starts the game
+        // Everyone else just waits for the GAME_STARTED WebSocket event
+        console.log('[Lobby] Timer reached 0, room leader starting game');
         handleStartGame();
       }
     }, 1000);
     
     return () => clearInterval(timer);
-  }, [timerStartedAt, isLoading, canStartGame, roomId, assignedRole, isStartingGame, calculateTimeLeft, handleStartGame]);
+  }, [timerStartedAt, isLoading, canStartGame, roomId, assignedRole, isStartingGame, isRoomLeader, calculateTimeLeft, handleStartGame]);
 
   const handleRetry = () => {
     setError(null);

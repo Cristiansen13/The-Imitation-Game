@@ -34,7 +34,10 @@ class WebSocketService {
       
       this.client = new Client({
         webSocketFactory: () => new SockJS(WS_URL),
-        connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
+        connectHeaders: token ? { 
+          'Authorization': `Bearer ${token}`,
+          'X-Authorization': token  // Fallback header
+        } : {},
         debug: (str) => {
           console.log('STOMP: ' + str);
         },
@@ -51,6 +54,7 @@ class WebSocketService {
 
       this.client.onStompError = (frame) => {
         console.error('STOMP error', frame);
+        console.error('Error details:', frame.headers, frame.body);
         reject(new Error(frame.headers['message']));
       };
 
@@ -209,14 +213,14 @@ class WebSocketService {
       return;
     }
 
+    console.log(`[WebSocket] Sending message to /app/chat/${roomId}`, { userId, username, message });
+
     this.client.publish({
       destination: `/app/chat/${roomId}`,
       body: JSON.stringify({
         userId,  // Backend expects userId
-        oderId: userId,  // Also send as oderId for frontend consistency
         username,
         message,
-        timestamp: new Date().toISOString(),
       }),
     });
   }
