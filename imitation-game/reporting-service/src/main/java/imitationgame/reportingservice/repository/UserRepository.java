@@ -22,4 +22,10 @@ public interface UserRepository extends JpaRepository<UserProfile, String> {
     
     @Query("SELECT u FROM UserProfile u ORDER BY u.gamesPlayed DESC")
     List<UserProfile> findMostActivePlayers();
+    
+    @Query("SELECT u FROM UserProfile u ORDER BY u.experiencePoints DESC")
+    List<UserProfile> findTopPlayersByXP();
+    
+    @Query("SELECT COALESCE(SUM(u.gamesPlayed), 0) FROM UserProfile u")
+    Long getTotalGameParticipations();
 }

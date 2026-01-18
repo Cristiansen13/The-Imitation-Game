@@ -1,8 +1,12 @@
 package imitationgame.chatservice.dto;
 
+import imitationgame.chatservice.model.RoomPlayer;
+
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.Map;
 
 public class GameEvent {
@@ -98,13 +102,8 @@ public class GameEvent {
         return event;
     }
 
-    public static GameEvent gameEnded(String roomId, String winnerId, String winCondition, 
-                                       String aiPlayerId, String aiUsername) {
+    public static GameEvent gameEnded(String roomId) {
         GameEvent event = new GameEvent(EventType.GAME_ENDED, roomId);
-        event.data.put("winnerId", winnerId);
-        event.data.put("winCondition", winCondition);
-        event.data.put("aiPlayerId", aiPlayerId);
-        event.data.put("aiUsername", aiUsername);
         return event;
     }
 

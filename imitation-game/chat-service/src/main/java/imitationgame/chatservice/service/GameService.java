@@ -1,12 +1,14 @@
 package imitationgame.chatservice.service;
 
 import imitationgame.chatservice.dto.GameEvent;
+import imitationgame.chatservice.dto.GameResultsDTO;
 import imitationgame.chatservice.model.GameRoom;
 import imitationgame.chatservice.model.RoomPlayer;
 import imitationgame.chatservice.model.UserProfile;
 import imitationgame.chatservice.repository.GameRoomRepository;
 import imitationgame.chatservice.repository.RoomPlayerRepository;
 import imitationgame.chatservice.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class GameService {
 
@@ -34,6 +37,9 @@ public class GameService {
 
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
+    
+    @Autowired
+    private RedisMessagePublisher redisPublisher;
 
     /**
      * Create a new game room
@@ -86,12 +92,33 @@ public class GameService {
         player.setRoom(room);
         player.setOderId(oderId);
         player.setUsername(username);
-        player.setStatus(RoomPlayer.PlayerStatus.ALIVE);
+        // Set status based on room state: DISCONNECTED for WAITING rooms, ALIVE for IN_PROGRESS
+        player.setStatus(room.getStatus() == GameRoom.GameStatus.IN_PROGRESS ? 
+                         RoomPlayer.PlayerStatus.ALIVE : 
+                         RoomPlayer.PlayerStatus.DISCONNECTED);
         player.setAI(false);
         player.setVotesReceived(0);
         player.setJoinedAt(Instant.now());
 
         room.getPlayers().add(player);
+        
+        // If this is a bot joining an in-progress game, reassign AI role to the bot
+        if (username != null && username.startsWith("aibot") && room.getStatus() == GameRoom.GameStatus.IN_PROGRESS) {
+            // Remove AI flag from previous AI player
+            room.getPlayers().stream()
+                .filter(RoomPlayer::isAI)
+                .forEach(p -> p.setAI(false));
+            
+            // Assign AI role to the bot
+            player.setAI(true);
+            room.setAiPlayerId(oderId);
+            
+            System.out.println("[GameService] Bot " + username + " joined in-progress game, reassigning AI role");
+            
+            // Broadcast updated GAME_STARTED event with correct aiPlayerId
+            broadcastToRoom(roomId, GameEvent.gameStartedWithAiId(roomId, room.getCurrentRound(), room.getMaxRounds(), oderId));
+        }
+        
         gameRoomRepository.save(room);
 
         // Broadcast player joined event
@@ -145,6 +172,9 @@ public class GameService {
         
         aiPlayer.setAI(true);
         room.setAiPlayerId(aiPlayer.getOderId());
+
+        // Set all players to ALIVE status when game starts
+        room.getPlayers().forEach(p -> p.setStatus(RoomPlayer.PlayerStatus.ALIVE));
 
         // Update room status
         room.setStatus(GameRoom.GameStatus.IN_PROGRESS);
@@ -244,12 +274,41 @@ public class GameService {
     }
 
     /**
+     * End voting phase and process results (called when timer expires)
+     */
+    @Transactional
+    public void endVoting(String roomId) {
+        GameRoom room = gameRoomRepository.findById(roomId)
+                .orElseThrow(() -> new IllegalArgumentException("Room not found: " + roomId));
+
+        if (room.getStatus() != GameRoom.GameStatus.VOTING) {
+            throw new IllegalStateException("Not in voting phase");
+        }
+
+        processVotingResults(roomId);
+    }
+
+    /**
      * Process voting results and eliminate player with most votes
      */
     @Transactional
     public void processVotingResults(String roomId) {
-        GameRoom room = gameRoomRepository.findById(roomId)
+        // Use pessimistic lock to prevent multiple replicas from processing simultaneously
+        GameRoom room = gameRoomRepository.findByIdWithLock(roomId)
                 .orElseThrow(() -> new IllegalArgumentException("Room not found: " + roomId));
+        
+        // If game already ended, skip processing (another replica already handled it)
+        if (room.getStatus() == GameRoom.GameStatus.FINISHED) {
+            log.info("Room {} already finished, skipping vote processing", roomId);
+            return;
+        }
+        
+        // If not in voting status, skip (might have already advanced)
+        if (room.getStatus() != GameRoom.GameStatus.VOTING) {
+            log.info("Room {} not in VOTING status (status={}), skipping vote processing", 
+                    roomId, room.getStatus());
+            return;
+        }
 
         // Find player with most votes
         RoomPlayer eliminated = room.getPlayers().stream()
@@ -275,18 +334,81 @@ public class GameService {
             broadcastToRoom(roomId, GameEvent.playerEliminated(roomId, eliminated.getOderId(), 
                     eliminated.getUsername(), wasAI, eliminated.getVotesReceived()));
 
-            // Check win conditions
+            // Check win conditions after elimination
             checkWinConditions(room);
         } else {
-            // No one eliminated, continue to next round
-            advanceRound(room);
+            // No one eliminated - check win conditions before advancing
+            // (e.g., if only 1 human and 1 AI left, AI should win)
+            checkWinConditionsBeforeAdvance(room);
         }
     }
 
     /**
      * Check if game has ended
      */
+    /**
+     * Check and process win conditions
+     */
     private void checkWinConditions(GameRoom room) {
+        // Room is already locked by caller (processVotingResults)
+        List<RoomPlayer> alivePlayers = room.getPlayers().stream()
+                .filter(p -> p.getStatus() == RoomPlayer.PlayerStatus.ALIVE)
+                .collect(Collectors.toList());
+
+        // Debug: Print all players and their state
+        log.info("=== WIN CONDITION CHECK for room {} ===", room.getId());
+        for (RoomPlayer p : room.getPlayers()) {
+            log.info("  Player: {} ({}), isAI={}, status={}", p.getUsername(), p.getOderId(), p.isAI(), p.getStatus());
+        }
+
+        RoomPlayer aiPlayer = room.getPlayers().stream()
+                .filter(RoomPlayer::isAI)
+                .findFirst()
+                .orElse(null);
+
+        boolean aiAlive = aiPlayer != null && aiPlayer.getStatus() == RoomPlayer.PlayerStatus.ALIVE;
+        int humanCount = (int) alivePlayers.stream().filter(p -> !p.isAI()).count();
+
+        log.info("Checking win conditions for room {}: aiPlayer={}, aiAlive={}, humanCount={}, alivePlayers={}, currentRound={}", 
+                room.getId(), aiPlayer != null ? aiPlayer.getUsername() : "null", aiAlive, humanCount, alivePlayers.size(), room.getCurrentRound());
+
+        String winnerId = null;
+        String winCondition = null;
+
+        if (!aiAlive) {
+            // Humans win - AI was eliminated
+            log.info("AI eliminated - humans win in room {}", room.getId());
+            winnerId = "HUMANS";
+            winCondition = "AI_ELIMINATED";
+            updateHumanWins(room);
+        } else if (humanCount <= 1) {
+            // AI wins - only AI (and possibly one human) left
+            log.info("AI survived - only {} human(s) left in room {}", humanCount, room.getId());
+            winnerId = aiPlayer.getOderId();
+            winCondition = "AI_SURVIVED";
+            updateAIWin(aiPlayer.getOderId());
+        } else if (room.getCurrentRound() >= room.getMaxRounds()) {
+            // Max rounds reached - AI wins by survival
+            log.info("Max rounds reached - AI wins in room {}", room.getId());
+            winnerId = aiPlayer.getOderId();
+            winCondition = "ROUNDS_EXHAUSTED";
+            updateAIWin(aiPlayer.getOderId());
+        }
+
+        if (winnerId != null) {
+            log.info("Game ending in room {} - winnerId={}, winCondition={}", room.getId(), winnerId, winCondition);
+            endGame(room, winnerId, winCondition);
+        } else {
+            log.info("No winner yet in room {}, advancing to next round", room.getId());
+            advanceRound(room);
+        }
+    }
+    
+    /**
+     * Check win conditions before advancing round (when no elimination occurred)
+     * This handles cases like tie votes where the game should still end if only 1 human + 1 AI remain
+     */
+    private void checkWinConditionsBeforeAdvance(GameRoom room) {
         List<RoomPlayer> alivePlayers = room.getPlayers().stream()
                 .filter(p -> p.getStatus() == RoomPlayer.PlayerStatus.ALIVE)
                 .collect(Collectors.toList());
@@ -299,29 +421,38 @@ public class GameService {
         boolean aiAlive = aiPlayer != null && aiPlayer.getStatus() == RoomPlayer.PlayerStatus.ALIVE;
         int humanCount = (int) alivePlayers.stream().filter(p -> !p.isAI()).count();
 
+        log.info("Checking win conditions before advance for room {}: aiAlive={}, humanCount={}, totalAlive={}", 
+                room.getId(), aiAlive, humanCount, alivePlayers.size());
+
         String winnerId = null;
         String winCondition = null;
 
         if (!aiAlive) {
             // Humans win - AI was eliminated
+            log.info("AI not alive - humans win in room {}", room.getId());
             winnerId = "HUMANS";
             winCondition = "AI_ELIMINATED";
             updateHumanWins(room);
         } else if (humanCount <= 1) {
             // AI wins - only AI (and possibly one human) left
+            log.info("AI wins - only {} human(s) left in room {}", humanCount, room.getId());
             winnerId = aiPlayer.getOderId();
             winCondition = "AI_SURVIVED";
             updateAIWin(aiPlayer.getOderId());
         } else if (room.getCurrentRound() >= room.getMaxRounds()) {
             // Max rounds reached - AI wins by survival
+            log.info("Max rounds reached - AI wins in room {}", room.getId());
             winnerId = aiPlayer.getOderId();
             winCondition = "ROUNDS_EXHAUSTED";
             updateAIWin(aiPlayer.getOderId());
         }
 
         if (winnerId != null) {
+            log.info("Game ending in room {} (no elimination) - winnerId={}, winCondition={}", 
+                    room.getId(), winnerId, winCondition);
             endGame(room, winnerId, winCondition);
         } else {
+            log.info("Game continues in room {}, advancing to next round", room.getId());
             advanceRound(room);
         }
     }
@@ -330,16 +461,22 @@ public class GameService {
      * Advance to next round
      */
     private void advanceRound(GameRoom room) {
+        log.info("=== ADVANCING TO NEXT ROUND in room {} - current round: {}, status: {} ===", 
+                room.getId(), room.getCurrentRound(), room.getStatus());
         room.setCurrentRound(room.getCurrentRound() + 1);
         room.setStatus(GameRoom.GameStatus.IN_PROGRESS);
 
-        // Reset votes
+        // Reset votes only for alive players
         for (RoomPlayer player : room.getPlayers()) {
-            player.setVotesReceived(0);
-            player.setVotedFor(null);
+            if (player.getStatus() == RoomPlayer.PlayerStatus.ALIVE) {
+                player.setVotesReceived(0);
+                player.setVotedFor(null);
+            }
         }
 
         gameRoomRepository.save(room);
+        log.info("=== ADVANCED TO ROUND {} in room {}, status now: {} ===",
+                room.getCurrentRound(), room.getId(), room.getStatus());
 
         broadcastToRoom(room.getId(), GameEvent.roundStarted(room.getId(), room.getCurrentRound()));
     }
@@ -347,26 +484,61 @@ public class GameService {
     /**
      * End the game
      */
-    private void endGame(GameRoom room, String winnerId, String winCondition) {
-        room.setStatus(GameRoom.GameStatus.FINISHED);
-        room.setEndedAt(Instant.now());
+    @Transactional
+    public void endGame(GameRoom room, String winnerId, String winCondition) {
+        log.info("=== END GAME CALLED for room {} - acquiring pessimistic lock ===", room.getId());
+        
+        // Re-fetch with pessimistic lock to prevent race conditions across replicas
+        GameRoom lockedRoom = gameRoomRepository.findByIdWithLock(room.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Room not found: " + room.getId()));
+        
+        // Check if game is already finished (prevents duplicate stats updates from multiple replicas)
+        if (lockedRoom.getStatus() == GameRoom.GameStatus.FINISHED) {
+            log.info("=== END GAME: Room {} already finished, skipping stats update ===", room.getId());
+            return;
+        }
+        
+        log.info("=== END GAME: Setting room {} status to FINISHED ===", lockedRoom.getId());
+        lockedRoom.setStatus(GameRoom.GameStatus.FINISHED);
+        lockedRoom.setEndedAt(Instant.now());
+        lockedRoom.setWinnerId(winnerId);
+        lockedRoom.setWinCondition(winCondition);
 
-        gameRoomRepository.save(room);
+        gameRoomRepository.save(lockedRoom);
+        log.info("=== END GAME: Room {} saved with status FINISHED ===", lockedRoom.getId());
 
-        // Update games played for all participants
-        for (RoomPlayer player : room.getPlayers()) {
-            updateGamesPlayed(player.getOderId());
+        // Find the AI player
+        String aiPlayerId = lockedRoom.getAiPlayerId();
+        boolean humansWon = "HUMANS".equals(winnerId);
+        boolean aiWon = aiPlayerId != null && aiPlayerId.equals(winnerId);
+        
+        // Update games played and award XP for all participants
+        for (RoomPlayer player : lockedRoom.getPlayers()) {
+            String playerId = player.getOderId();
+            updateGamesPlayed(playerId);
+            
+            // Award XP for winning (50 XP)
+            if (humansWon && !player.isAI()) {
+                awardXP(playerId, 50, "Human victory");
+            } else if (aiWon && player.isAI()) {
+                awardXP(playerId, 50, "AI victory");
+            }
+            
+            // Award XP for correct AI vote (30 XP) - only if they voted for the actual AI
+            if (!player.isAI() && aiPlayerId != null && aiPlayerId.equals(player.getVotedFor())) {
+                awardXP(playerId, 30, "Correct AI identification");
+            }
         }
 
-        // Reveal AI and broadcast game ended
-        String aiUsername = room.getPlayers().stream()
+        // Reveal AI and broadcast game ended with player stats
+        String aiUsername = lockedRoom.getPlayers().stream()
                 .filter(RoomPlayer::isAI)
                 .map(RoomPlayer::getUsername)
                 .findFirst()
                 .orElse("Unknown");
 
-        broadcastToRoom(room.getId(), GameEvent.gameEnded(room.getId(), winnerId, winCondition, 
-                room.getAiPlayerId(), aiUsername));
+        broadcastToRoom(lockedRoom.getId(), GameEvent.gameEnded(lockedRoom.getId()));
+        log.info("=== END GAME: Broadcasted GAME_ENDED event for room {} ===", lockedRoom.getId());
     }
 
     /**
@@ -383,13 +555,19 @@ public class GameService {
                 .orElse(null);
 
         if (player == null) {
+            log.debug("Player {} not found in room {} - already removed", oderId, roomId);
             return;
         }
 
         if (room.getStatus() == GameRoom.GameStatus.WAITING) {
             // Remove player from waiting room
             room.getPlayers().remove(player);
-            roomPlayerRepository.delete(player);
+            
+            try {
+                roomPlayerRepository.delete(player);
+            } catch (Exception e) {
+                log.warn("Failed to delete player {} from room {}: {}", oderId, roomId, e.getMessage());
+            }
             
             if (room.getPlayers().isEmpty()) {
                 // No players left, delete room
@@ -401,11 +579,19 @@ public class GameService {
                         .count();
                 
                 if (humanPlayerCount == 0) {
-                    // Only bots left, remove all bots and delete room
-                    room.getPlayers().forEach(botPlayer -> roomPlayerRepository.delete(botPlayer));
+                    // Only bots left, broadcast game ended before cleanup
+                    log.info("All human players left waiting room {}, ending and cleaning up", roomId);
+                    broadcastToRoom(roomId, GameEvent.gameEnded(roomId));
+                    
+                    // Remove all bots and delete room
+                    room.getPlayers().forEach(botPlayer -> {
+                        try {
+                            roomPlayerRepository.delete(botPlayer);
+                        } catch (Exception e) {
+                            log.warn("Failed to delete bot player: {}", e.getMessage());
+                        }
+                    });
                     gameRoomRepository.delete(room);
-                    // Broadcast to bots so they disconnect
-                    broadcastToRoom(roomId, GameEvent.playerLeft(roomId, oderId, player.getUsername()));
                 } else {
                     // Still have human players
                     gameRoomRepository.save(room);
@@ -413,14 +599,33 @@ public class GameService {
                 }
             }
         } else {
-            // Mark as eliminated if game in progress
+            // Mark as eliminated if game in progress (but don't end the game)
             player.setStatus(RoomPlayer.PlayerStatus.ELIMINATED);
+            player.setEliminatedAt(Instant.now());
             gameRoomRepository.save(room);
             
             broadcastToRoom(roomId, GameEvent.playerLeft(roomId, oderId, player.getUsername()));
             
-            // Check win conditions
-            checkWinConditions(room);
+            // Don't automatically end the game when players disconnect
+            // Games should only end based on voting results and win conditions
+        }
+    }
+
+    /**
+     * Handle player disconnect - find their room and remove them
+     */
+    @Transactional
+    public void handlePlayerDisconnect(String oderId) {
+        // Find the room this player is in
+        Optional<GameRoom> roomOpt = gameRoomRepository.findAll().stream()
+                .filter(room -> room.getPlayers().stream()
+                        .anyMatch(player -> player.getOderId().equals(oderId)))
+                .findFirst();
+        
+        if (roomOpt.isPresent()) {
+            GameRoom room = roomOpt.get();
+            log.info("Player {} disconnected from room {}", oderId, room.getId());
+            leaveRoom(room.getId(), oderId);
         }
     }
 
@@ -456,7 +661,8 @@ public class GameService {
     }
 
     private void broadcastToRoom(String roomId, GameEvent event) {
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, event);
+        // Publish to Redis for cross-replica synchronization
+        redisPublisher.publish("/topic/room/" + roomId, event);
     }
 
     private void updateGamesPlayed(String oderId) {
@@ -471,6 +677,52 @@ public class GameService {
             user.setCorrectAIIdentifications(user.getCorrectAIIdentifications() + 1);
             userRepository.save(user);
         });
+    }
+
+    /**
+     * Get game results for a finished game
+     */
+    public GameResultsDTO getGameResults(String roomId) {
+        GameRoom room = gameRoomRepository.findById(roomId)
+                .orElseThrow(() -> new IllegalArgumentException("Room not found: " + roomId));
+        
+        if (room.getStatus() != GameRoom.GameStatus.FINISHED) {
+            throw new IllegalStateException("Game has not finished yet");
+        }
+        
+        GameResultsDTO results = new GameResultsDTO();
+        results.setRoomId(room.getId());
+        results.setWinnerId(room.getWinnerId());
+        results.setWinCondition(room.getWinCondition());
+        
+        // Find AI player
+        RoomPlayer aiPlayer = room.getPlayers().stream()
+                .filter(RoomPlayer::isAI)
+                .findFirst()
+                .orElse(null);
+        
+        if (aiPlayer != null) {
+            results.setAiPlayerId(aiPlayer.getOderId());
+            results.setAiUsername(aiPlayer.getUsername());
+        }
+        
+        // Build player results
+        List<GameResultsDTO.PlayerResultDTO> playerResults = room.getPlayers().stream()
+                .map(player -> {
+                    GameResultsDTO.PlayerResultDTO dto = new GameResultsDTO.PlayerResultDTO();
+                    dto.setOderId(player.getOderId());
+                    dto.setUsername(player.getUsername());
+                    dto.setVotesReceived(player.getVotesReceived());
+                    dto.setVotedFor(player.getVotedFor());
+                    dto.setIsAI(player.isAI());
+                    dto.setStatus(player.getStatus().name());
+                    return dto;
+                })
+                .collect(Collectors.toList());
+        
+        results.setPlayers(playerResults);
+        
+        return results;
     }
 
     private void updateHumanWins(GameRoom room) {
@@ -488,6 +740,14 @@ public class GameService {
         userRepository.findById(aiOderId).ifPresent(user -> {
             user.setGamesWonAsAI(user.getGamesWonAsAI() + 1);
             userRepository.save(user);
+        });
+    }
+    
+    private void awardXP(String oderId, int xpAmount, String reason) {
+        userRepository.findById(oderId).ifPresent(user -> {
+            user.setExperiencePoints(user.getExperiencePoints() + xpAmount);
+            userRepository.save(user);
+            log.info("Awarded {} XP to user {} for: {}", xpAmount, user.getUsername(), reason);
         });
     }
 }

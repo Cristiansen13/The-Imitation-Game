@@ -1,5 +1,6 @@
 package imitationgame.chatservice.model;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -16,14 +17,31 @@ public class UserProfile {
     private String role; // PLAYER, ADMIN
     
     // Game statistics
+    @Column(name = "games_played")
     private int gamesPlayed = 0;
+    
+    @Column(name = "games_won_as_human")
     private int gamesWonAsHuman = 0;
+    
+    @Column(name = "games_won_as_ai")
     private int gamesWonAsAI = 0;
+    
+    @Column(name = "times_eliminated_first")
     private int timesEliminatedFirst = 0;
+    
+    @Column(name = "correctaiidentifications")
     private int correctAIIdentifications = 0;
+    
+    @Column(name = "total_votes_cast")
     private int totalVotesCast = 0;
     
+    @Column(name = "experience_points")
+    private int experiencePoints = 0;
+    
+    @Column(name = "created_at")
     private Instant createdAt = Instant.now();
+    
+    @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
     public String getId() {
@@ -104,6 +122,14 @@ public class UserProfile {
 
     public void setTotalVotesCast(int totalVotesCast) {
         this.totalVotesCast = totalVotesCast;
+    }
+    
+    public int getExperiencePoints() {
+        return experiencePoints;
+    }
+
+    public void setExperiencePoints(int experiencePoints) {
+        this.experiencePoints = experiencePoints;
     }
 
     public Instant getCreatedAt() {

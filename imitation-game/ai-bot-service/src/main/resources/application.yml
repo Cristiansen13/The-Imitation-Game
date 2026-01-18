@@ -57,5 +57,5 @@ spring.config.activate.on-profile: docker
 
 bot:
   chat-service-url: http://chat-service:8080
-  chat-ws-url: ws://chat-service:8080/ws
+  chat-ws-url: ws://chat-service:8080/ws-plain
   ollama-url: http://ollama:11434

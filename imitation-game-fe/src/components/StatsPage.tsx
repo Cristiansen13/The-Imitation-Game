@@ -1,12 +1,39 @@
 import { motion } from 'motion/react';
 import { ArrowLeft, TrendingUp, Users, Brain, Target, Award, Calendar } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { useState, useEffect } from 'react';
+import { reportingApi, type PlayerStats, type GlobalStats } from '../services/api';
 
 interface StatsPageProps {
   onBack: () => void;
 }
 
 export function StatsPage({ onBack }: StatsPageProps) {
+  const [globalStats, setGlobalStats] = useState<GlobalStats | null>(null);
+  const [topPlayers, setTopPlayers] = useState<PlayerStats[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        setIsLoading(true);
+        const [global, leaderboard] = await Promise.all([
+          reportingApi.getGlobalStats(),
+          reportingApi.getLeaderboard(5)
+        ]);
+        
+        if (global) setGlobalStats(global);
+        if (leaderboard) setTopPlayers(leaderboard.topByXP || []);
+      } catch (error) {
+        console.error('Failed to load statistics:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadStats();
+  }, []);
+
   const performanceData = [
     { date: 'Lun', rate: 45 },
     { date: 'Mar', rate: 52 },
@@ -17,25 +44,25 @@ export function StatsPage({ onBack }: StatsPageProps) {
     { date: 'Dum', rate: 68 },
   ];
 
-  const roleData = [
-    { name: 'Ca Jucător', value: 35, color: '#06b6d4' },
-    { name: 'Ca AI', value: 12, color: '#a855f7' },
-  ];
+  const roleData = globalStats ? [
+    { name: 'Ca Jucător', value: Math.round(globalStats.averageWinRate), color: '#06b6d4' },
+    { name: 'Ca AI', value: Math.round(100 - globalStats.averageWinRate), color: '#a855f7' },
+  ] : [];
 
-  const topPlayers = [
-    { rank: 1, username: 'MasterDetective', winRate: 84.2, games: 156 },
-    { rank: 2, username: 'AIHunter_Pro', winRate: 81.5, games: 203 },
-    { rank: 3, username: 'LogicMaster', winRate: 79.8, games: 142 },
-    { rank: 4, username: 'You', winRate: 68.5, games: 47 },
-    { rank: 5, username: 'CyberSleuth', winRate: 67.3, games: 89 },
-  ];
+  const globalStatsDisplay = globalStats ? [
+    { label: 'Total jucători', value: globalStats.totalPlayers.toString(), icon: Users, color: 'cyan' },
+    { label: 'Meciuri jucate', value: globalStats.totalGamesPlayed.toString(), icon: Target, color: 'purple' },
+    { label: 'Rată detectare AI (globală)', value: `${globalStats.averageDetectRate.toFixed(1)}%`, icon: Brain, color: 'cyan' },
+    { label: 'Jocuri active', value: globalStats.activeGames.toString(), icon: Award, color: 'purple' },
+  ] : [];
 
-  const globalStats = [
-    { label: 'Jucători activi azi', value: '2,847', icon: Users, color: 'cyan' },
-    { label: 'Meciuri jucate azi', value: '1,234', icon: Target, color: 'purple' },
-    { label: 'Rată detectare AI (globală)', value: '62.4%', icon: Brain, color: 'cyan' },
-    { label: 'Rată câștig AI (globală)', value: '37.6%', icon: Award, color: 'purple' },
-  ];
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen p-6">
@@ -61,7 +88,7 @@ export function StatsPage({ onBack }: StatsPageProps) {
 
         {/* Global stats grid */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {globalStats.map((stat, idx) => (
+          {globalStatsDisplay.map((stat, idx) => (
             <motion.div
               key={idx}
               initial={{ opacity: 0, y: 20 }}
@@ -86,56 +113,8 @@ export function StatsPage({ onBack }: StatsPageProps) {
           ))}
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* Performance over time */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 shadow-xl"
-          >
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-cyan-500/10 rounded-lg border border-cyan-500/30">
-                <TrendingUp className="w-5 h-5 text-cyan-400" />
-              </div>
-              <div>
-                <h2 className="text-white">Evoluția Performanței</h2>
-                <p className="text-slate-400">Rata ta de detectare (ultimele 7 zile)</p>
-              </div>
-            </div>
-            
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={performanceData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="date" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1e293b',
-                      border: '1px solid #334155',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="rate"
-                    stroke="url(#colorGradient)"
-                    strokeWidth={3}
-                    dot={{ fill: '#06b6d4', r: 4 }}
-                  />
-                  <defs>
-                    <linearGradient id="colorGradient" x1="0" y1="0" x2="1" y2="0">
-                      <stop offset="0%" stopColor="#06b6d4" />
-                      <stop offset="100%" stopColor="#a855f7" />
-                    </linearGradient>
-                  </defs>
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </motion.div>
-
-          {/* Win distribution */}
+        {/* Win distribution */}
+        <div className="grid lg:grid-cols-1 gap-6">
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -203,7 +182,7 @@ export function StatsPage({ onBack }: StatsPageProps) {
             </div>
             <div>
               <h2 className="text-white">Top Jucători Globali</h2>
-              <p className="text-slate-400">Clasament pe baza ratei de detectare</p>
+              <p className="text-slate-400">Clasament pe baza punctelor de experiență</p>
             </div>
           </div>
 
@@ -214,26 +193,22 @@ export function StatsPage({ onBack }: StatsPageProps) {
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.5 + idx * 0.05 }}
-                className={`flex items-center gap-4 p-4 rounded-xl border transition-all ${
-                  player.username === 'You'
-                    ? 'bg-cyan-500/10 border-cyan-500/30 shadow-lg shadow-cyan-500/10'
-                    : 'bg-slate-800/50 border-slate-700 hover:border-slate-600'
-                }`}
+                className="flex items-center gap-4 p-4 rounded-xl border transition-all bg-slate-800/50 border-slate-700 hover:border-slate-600"
               >
                 {/* Rank badge */}
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  player.rank === 1 ? 'bg-yellow-500/20 border-2 border-yellow-500/50' :
-                  player.rank === 2 ? 'bg-slate-400/20 border-2 border-slate-400/50' :
-                  player.rank === 3 ? 'bg-orange-700/20 border-2 border-orange-700/50' :
+                  idx + 1 === 1 ? 'bg-yellow-500/20 border-2 border-yellow-500/50' :
+                  idx + 1 === 2 ? 'bg-slate-400/20 border-2 border-slate-400/50' :
+                  idx + 1 === 3 ? 'bg-orange-700/20 border-2 border-orange-700/50' :
                   'bg-slate-700/50 border border-slate-600/50'
                 }`}>
                   <span className={`${
-                    player.rank === 1 ? 'text-yellow-400' :
-                    player.rank === 2 ? 'text-slate-300' :
-                    player.rank === 3 ? 'text-orange-400' :
+                    idx + 1 === 1 ? 'text-yellow-400' :
+                    idx + 1 === 2 ? 'text-slate-300' :
+                    idx + 1 === 3 ? 'text-orange-400' :
                     'text-slate-500'
                   }`}>
-                    #{player.rank}
+                    #{idx + 1}
                   </span>
                 </div>
 
@@ -246,71 +221,17 @@ export function StatsPage({ onBack }: StatsPageProps) {
 
                 {/* Player info */}
                 <div className="flex-1">
-                  <p className={`${player.username === 'You' ? 'text-cyan-400' : 'text-white'}`}>
-                    {player.username}
-                  </p>
-                  <p className="text-slate-500">{player.games} meciuri</p>
+                  <p className="text-white">{player.username}</p>
+                  <p className="text-slate-500">{player.gamesPlayed} meciuri</p>
                 </div>
 
-                {/* Win rate */}
+                {/* XP */}
                 <div className="text-right">
-                  <p className="text-white">{player.winRate}%</p>
-                  <p className="text-slate-500">Win rate</p>
+                  <p className="text-cyan-400">{player.experiencePoints || 0}</p>
+                  <p className="text-slate-500">XP</p>
                 </div>
-
-                {/* Badge for top 3 */}
-                {player.rank <= 3 && (
-                  <div className={`p-2 rounded-lg ${
-                    player.rank === 1 ? 'bg-yellow-500/10' :
-                    player.rank === 2 ? 'bg-slate-400/10' :
-                    'bg-orange-700/10'
-                  }`}>
-                    <Award className={`w-5 h-5 ${
-                      player.rank === 1 ? 'text-yellow-400' :
-                      player.rank === 2 ? 'text-slate-300' :
-                      'text-orange-400'
-                    }`} />
-                  </div>
-                )}
               </motion.div>
             ))}
-          </div>
-        </motion.div>
-
-        {/* Session statistics */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 shadow-xl"
-        >
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/30">
-              <Calendar className="w-5 h-5 text-purple-400" />
-            </div>
-            <div>
-              <h2 className="text-white">Activitate Azi</h2>
-              <p className="text-slate-400">Statistici sesiune curentă</p>
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-4 gap-4">
-            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
-              <p className="text-slate-400 mb-2">Ore jucate</p>
-              <p className="text-white">2h 34m</p>
-            </div>
-            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
-              <p className="text-slate-400 mb-2">Meciuri finalizate</p>
-              <p className="text-white">8</p>
-            </div>
-            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
-              <p className="text-slate-400 mb-2">Cel mai lung meci</p>
-              <p className="text-white">18 minute</p>
-            </div>
-            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
-              <p className="text-slate-400 mb-2">XP câștigat</p>
-              <p className="text-cyan-400">+487</p>
-            </div>
           </div>
         </motion.div>
       </div>

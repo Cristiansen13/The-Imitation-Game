@@ -27,6 +27,9 @@ public class GameRoom {
     private Instant startedAt;
     private Instant endedAt;
     
+    private String winnerId;
+    private String winCondition;
+    
     private String aiPlayerId; // The player assigned as AI
     
     @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
@@ -118,6 +121,22 @@ public class GameRoom {
 
     public void setEndedAt(Instant endedAt) {
         this.endedAt = endedAt;
+    }
+    
+    public String getWinnerId() {
+        return winnerId;
+    }
+
+    public void setWinnerId(String winnerId) {
+        this.winnerId = winnerId;
+    }
+
+    public String getWinCondition() {
+        return winCondition;
+    }
+
+    public void setWinCondition(String winCondition) {
+        this.winCondition = winCondition;
     }
 
     public String getAiPlayerId() {

@@ -9,6 +9,8 @@ public class GameSummary {
     private int rounds;
     private Instant startedAt;
     private Instant endedAt;
+    private String winnerId;
+    private String winCondition;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -24,4 +26,10 @@ public class GameSummary {
 
     public Instant getEndedAt() { return endedAt; }
     public void setEndedAt(Instant endedAt) { this.endedAt = endedAt; }
+    
+    public String getWinnerId() { return winnerId; }
+    public void setWinnerId(String winnerId) { this.winnerId = winnerId; }
+    
+    public String getWinCondition() { return winCondition; }
+    public void setWinCondition(String winCondition) { this.winCondition = winCondition; }
 }

@@ -8,6 +8,7 @@ public class LeaderboardResponse {
     private List<PlayerStats> topByWinRate;
     private List<PlayerStats> topByDetectRate;
     private List<PlayerStats> mostActive;
+    private List<PlayerStats> topByXP;
 
     public List<PlayerStats> getTopByWins() { return topByWins; }
     public void setTopByWins(List<PlayerStats> topByWins) { this.topByWins = topByWins; }
@@ -20,4 +21,7 @@ public class LeaderboardResponse {
 
     public List<PlayerStats> getMostActive() { return mostActive; }
     public void setMostActive(List<PlayerStats> mostActive) { this.mostActive = mostActive; }
+    
+    public List<PlayerStats> getTopByXP() { return topByXP; }
+    public void setTopByXP(List<PlayerStats> topByXP) { this.topByXP = topByXP; }
 }

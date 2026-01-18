@@ -6,6 +6,11 @@ import imitationgame.reportingservice.model.UserProfile;
 import imitationgame.reportingservice.repository.GameRoomRepository;
 import imitationgame.reportingservice.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -21,6 +26,15 @@ public class ReportingService {
 
     @Autowired
     private GameRoomRepository gameRoomRepository;
+    
+    @Value("${chat.service.url:http://chat-service:8080}")
+    private String chatServiceUrl;
+    
+    private final WebClient webClient;
+    
+    public ReportingService() {
+        this.webClient = WebClient.builder().build();
+    }
 
     /**
      * Get leaderboard with top players by different metrics
@@ -51,6 +65,13 @@ public class ReportingService {
         
         // Most active players
         response.setMostActive(userRepository.findMostActivePlayers()
+                .stream()
+                .limit(limit)
+                .map(this::toPlayerStats)
+                .collect(Collectors.toList()));
+        
+        // Top players by XP
+        response.setTopByXP(userRepository.findTopPlayersByXP()
                 .stream()
                 .limit(limit)
                 .map(this::toPlayerStats)
@@ -122,10 +143,38 @@ public class ReportingService {
                 .map(this::toGameSummary)
                 .collect(Collectors.toList());
     }
+    
+    /**
+     * Get leaderboard for players in a specific room
+     */
+    public List<PlayerStats> getRoomLeaderboard(String roomId) {
+        try {
+            // Get player IDs from chat service
+            List<String> playerIds = webClient.get()
+                    .uri(chatServiceUrl + "/rooms/" + roomId + "/players/ids")
+                    .retrieve()
+                    .bodyToMono(new ParameterizedTypeReference<List<String>>() {})
+                    .block();
+            
+            if (playerIds == null || playerIds.isEmpty()) {
+                return List.of();
+            }
+            
+            return playerIds.stream()
+                    .map(playerId -> userRepository.findById(playerId))
+                    .filter(opt -> opt.isPresent())
+                    .map(opt -> toPlayerStats(opt.get()))
+                    .sorted((a, b) -> Integer.compare(b.getExperiencePoints(), a.getExperiencePoints()))
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            // Log error and return empty list
+            return List.of();
+        }
+    }
 
     private PlayerStats toPlayerStats(UserProfile profile) {
         PlayerStats stats = new PlayerStats();
-        stats.setOderId(profile.getOderId());
+        stats.setId(profile.getId());
         stats.setUsername(profile.getUsername());
         stats.setGamesPlayed(profile.getGamesPlayed());
         stats.setGamesWonAsHuman(profile.getGamesWonAsHuman());
@@ -134,6 +183,7 @@ public class ReportingService {
         stats.setCorrectAIIdentifications(profile.getCorrectAIIdentifications());
         stats.setWinRate(profile.getWinRate());
         stats.setDetectRate(profile.getDetectRate());
+        stats.setExperiencePoints(profile.getExperiencePoints());
         return stats;
     }
 
@@ -144,6 +194,8 @@ public class ReportingService {
         summary.setRounds(room.getCurrentRound());
         summary.setStartedAt(room.getStartedAt());
         summary.setEndedAt(room.getEndedAt());
+        summary.setWinnerId(room.getWinnerId());
+        summary.setWinCondition(room.getWinCondition());
         return summary;
     }
 }

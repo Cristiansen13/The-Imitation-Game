@@ -12,6 +12,7 @@ import reactor.core.publisher.Mono;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -33,6 +34,7 @@ public class RoomBotManager {
     private final WebClient webClient;
     
     private final Map<String, BotPlayer> activeBots = new ConcurrentHashMap<>();
+    private final Set<String> joiningRooms = ConcurrentHashMap.newKeySet();
     private final List<BotCredentials> botCredentialsPool = new ArrayList<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     
@@ -138,15 +140,23 @@ public class RoomBotManager {
                 // Check if room needs a bot (has 2+ human players, status is WAITING, bot not already present)
                 // Wait for at least 2 players to ensure they have time to establish WebSocket connections
                 if ("WAITING".equals(status) && players != null && players.size() >= 2 && 
-                    !activeBots.containsKey(roomId) && !hasBot(players)) {
+                    !activeBots.containsKey(roomId) && !joiningRooms.contains(roomId) && !hasBot(players)) {
                     
                     log.info("Room {} has {} players and needs a bot. Joining immediately...", roomId, players.size());
                     
-                    // FIXED: Join immediately instead of scheduling with delay
-                    // The delay was causing race conditions where players could join/leave in the meantime
-                    // Players should already have WebSocket connections established by now since they
-                    // joined via REST API first, then subscribed to WebSocket
-                    joinRoomAsBot(roomId);
+                    // Mark room as being joined to prevent race condition
+                    joiningRooms.add(roomId);
+                    
+                    try {
+                        // FIXED: Join immediately instead of scheduling with delay
+                        // The delay was causing race conditions where players could join/leave in the meantime
+                        // Players should already have WebSocket connections established by now since they
+                        // joined via REST API first, then subscribed to WebSocket
+                        joinRoomAsBot(roomId);
+                    } catch (Exception e) {
+                        log.error("Failed to join room {} as bot: {}", roomId, e.getMessage(), e);
+                        joiningRooms.remove(roomId); // Clean up on failure
+                    }
                 }
             }
             
@@ -198,6 +208,7 @@ public class RoomBotManager {
             if (joinResponse == null) {
                 log.error("Failed to join room {} with bot {}", roomId, botCreds.getUsername());
                 releaseBotCredentials(botCreds.getUsername());
+                joiningRooms.remove(roomId); // Clean up if join failed
                 return;
             }
             
@@ -221,6 +232,7 @@ public class RoomBotManager {
             
             botPlayer.connect();
             activeBots.put(roomId, botPlayer);
+            joiningRooms.remove(roomId); // Remove from joining set now that bot is active
             
             log.info("Bot {} successfully joined room {} and connected to WebSocket", botCreds.getUsername(), roomId);
             
@@ -230,11 +242,13 @@ public class RoomBotManager {
             if (botCreds != null) {
                 releaseBotCredentials(botCreds.getUsername());
             }
+            joiningRooms.remove(roomId); // Clean up on interrupt
         } catch (Exception e) {
             log.error("Error joining room {} as bot: {}", roomId, e.getMessage());
             if (botCreds != null) {
                 releaseBotCredentials(botCreds.getUsername());
             }
+            joiningRooms.remove(roomId); // Clean up on error
         }
     }
     

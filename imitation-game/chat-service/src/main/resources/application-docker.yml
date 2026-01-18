@@ -16,6 +16,10 @@ spring:
       resourceserver:
         jwt:
           jwk-set-uri: ${KEYCLOAK_URL}/realms/imitation-game/protocol/openid-connect/certs
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
 
 keycloak:
   public-issuer: ${KEYCLOAK_PUBLIC_URL:http://localhost:8085}/realms/imitation-game

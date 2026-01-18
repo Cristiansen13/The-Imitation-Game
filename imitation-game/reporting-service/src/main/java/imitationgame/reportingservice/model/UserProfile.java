@@ -5,28 +5,40 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "user_profile")
+@Table(name = "user_profiles")
 public class UserProfile {
     @Id
-    private String oderId;
+    private String id;
     private String username;
     private String email;
+    
+    @Column(name = "created_at")
     private Instant createdAt;
     
     // Game statistics
+    @Column(name = "games_played")
     private int gamesPlayed = 0;
+    
+    @Column(name = "games_won_as_human")
     private int gamesWonAsHuman = 0;
+    
+    @Column(name = "games_won_as_ai")
     private int gamesWonAsAI = 0;
+    
+    @Column(name = "correctaiidentifications")
     private int correctAIIdentifications = 0;
+    
+    @Column(name = "experience_points")
+    private int experiencePoints = 0;
 
     public UserProfile() {
-        this.oderId = UUID.randomUUID().toString();
+        this.id = UUID.randomUUID().toString();
         this.createdAt = Instant.now();
     }
 
     // Getters and Setters
-    public String getOderId() { return oderId; }
-    public void setOderId(String oderId) { this.oderId = oderId; }
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
 
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
@@ -48,6 +60,9 @@ public class UserProfile {
 
     public int getCorrectAIIdentifications() { return correctAIIdentifications; }
     public void setCorrectAIIdentifications(int correctAIIdentifications) { this.correctAIIdentifications = correctAIIdentifications; }
+    
+    public int getExperiencePoints() { return experiencePoints; }
+    public void setExperiencePoints(int experiencePoints) { this.experiencePoints = experiencePoints; }
 
     // Calculated stats
     public double getWinRate() {

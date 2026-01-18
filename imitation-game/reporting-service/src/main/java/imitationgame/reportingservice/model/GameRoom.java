@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "game_room")
+@Table(name = "game_rooms")
 public class GameRoom {
     
     public enum GameStatus {
@@ -19,12 +19,29 @@ public class GameRoom {
     @Enumerated(EnumType.STRING)
     private GameStatus status = GameStatus.WAITING;
     
+    @Column(name = "current_round")
     private int currentRound = 0;
+    
+    @Column(name = "max_rounds")
     private int maxRounds = 5;
+    
+    @Column(name = "ai_player_id")
     private String aiPlayerId;
+    
+    @Column(name = "created_at")
     private Instant createdAt;
+    
+    @Column(name = "started_at")
     private Instant startedAt;
+    
+    @Column(name = "ended_at")
     private Instant endedAt;
+    
+    @Column(name = "winner_id")
+    private String winnerId;
+    
+    @Column(name = "win_condition")
+    private String winCondition;
 
     public GameRoom() {
         this.id = UUID.randomUUID().toString();
@@ -58,4 +75,10 @@ public class GameRoom {
 
     public Instant getEndedAt() { return endedAt; }
     public void setEndedAt(Instant endedAt) { this.endedAt = endedAt; }
+    
+    public String getWinnerId() { return winnerId; }
+    public void setWinnerId(String winnerId) { this.winnerId = winnerId; }
+    
+    public String getWinCondition() { return winCondition; }
+    public void setWinCondition(String winCondition) { this.winCondition = winCondition; }
 }

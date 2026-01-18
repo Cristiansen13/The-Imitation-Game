@@ -13,11 +13,13 @@
 [INFO] Copying 0 resource from src\main\resources to target\classes
 [INFO] 
 [INFO] --- compiler:3.13.0:compile (default-compile) @ chat-service ---
-[INFO] Compiling 23 source files with javac [forked debug parameters release 21] to target\classes
+[INFO] Compiling 28 source files with javac [forked debug parameters release 21] to target\classes
 [WARNING] Unable to autodetect 'javac' path, using 'javac' from the environment.
+[WARNING] C:\Users\User\Poli\SCD\Proiect\imitation-game\chat-service\src\main\java\imitationgame\chatservice\config\RedisWebSocketConfig.java:[46,40] [removal] GenericJackson2JsonRedisSerializer in org.springframework.data.redis.serializer has been deprecated and marked for removal
+[WARNING] C:\Users\User\Poli\SCD\Proiect\imitation-game\chat-service\src\main\java\imitationgame\chatservice\config\RedisWebSocketConfig.java:[48,44] [removal] GenericJackson2JsonRedisSerializer in org.springframework.data.redis.serializer has been deprecated and marked for removal
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------
-[INFO] Total time:  9.078 s
-[INFO] Finished at: 2026-01-16T00:58:18+02:00
+[INFO] Total time:  24.163 s
+[INFO] Finished at: 2026-01-17T22:30:05+02:00
 [INFO] ------------------------------------------------------------------------

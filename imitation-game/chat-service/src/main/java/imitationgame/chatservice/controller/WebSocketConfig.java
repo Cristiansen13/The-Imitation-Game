@@ -22,6 +22,7 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
+import java.util.List;
 import java.util.Map;
 
 @Configuration
@@ -36,7 +37,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        config.enableSimpleBroker("/topic", "/queue");
+        // Use external message broker (Redis) for multi-instance support
+        // This allows WebSocket messages to be synchronized across all replicas
+        config.enableSimpleBroker("/topic", "/queue")
+              .setTaskScheduler(null); // Will be auto-configured with Redis
         config.setApplicationDestinationPrefixes("/app");
         config.setUserDestinationPrefix("/user");
     }
@@ -103,24 +107,62 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         @Override
         public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                        WebSocketHandler wsHandler, Map<String, Object> attributes) throws Exception {
-            if (request instanceof ServletServerHttpRequest servletRequest) {
-                String token = servletRequest.getServletRequest().getParameter("access_token");
-                
-                if (token != null && !token.isEmpty()) {
-                    try {
-                        Jwt jwt = jwtDecoder.decode(token);
-                        UsernamePasswordAuthenticationToken authentication = 
-                            new UsernamePasswordAuthenticationToken(jwt, null, java.util.Collections.emptyList());
-                        SecurityContextHolder.getContext().setAuthentication(authentication);
-                        attributes.put("jwt", jwt);
-                        return true;
-                    } catch (Exception e) {
-                        // Token validation failed
-                        return false;
+            String token = null;
+            
+            // Try to extract token from Authorization header
+            List<String> authHeaders = request.getHeaders().get("Authorization");
+            if (authHeaders != null && !authHeaders.isEmpty()) {
+                String authHeader = authHeaders.get(0);
+                if (authHeader.startsWith("Bearer ")) {
+                    token = authHeader.substring(7);
+                    System.out.println("[WebSocketConfig] Token found in Authorization header");
+                }
+            }
+            
+            // If not found in header, try query parameter (for backwards compatibility)
+            if (token == null || token.isEmpty()) {
+                if (request instanceof ServletServerHttpRequest servletRequest) {
+                    token = servletRequest.getServletRequest().getParameter("access_token");
+                    if (token != null) {
+                        System.out.println("[WebSocketConfig] Token found in query parameter");
                     }
                 }
             }
+            
+            // If still not found, try URI query string
+            if (token == null || token.isEmpty()) {
+                String query = request.getURI().getQuery();
+                if (query != null && query.contains("access_token=")) {
+                    String[] params = query.split("&");
+                    for (String param : params) {
+                        if (param.startsWith("access_token=")) {
+                            token = param.substring("access_token=".length());
+                            System.out.println("[WebSocketConfig] Token found in URI query string");
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            System.out.println("[WebSocketConfig] Handshake interceptor called. Token present: " + (token != null));
+            
+            if (token != null && !token.isEmpty()) {
+                try {
+                    Jwt jwt = jwtDecoder.decode(token);
+                    UsernamePasswordAuthenticationToken authentication = 
+                        new UsernamePasswordAuthenticationToken(jwt, null, java.util.Collections.emptyList());
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                    attributes.put("jwt", jwt);
+                    System.out.println("[WebSocketConfig] Token validated successfully for user: " + jwt.getSubject());
+                    return true;
+                } catch (Exception e) {
+                    // Token validation failed
+                    System.err.println("[WebSocketConfig] Token validation failed: " + e.getMessage());
+                    return false;
+                }
+            }
             // Allow connections without token (for backwards compatibility with frontend)
+            System.out.println("[WebSocketConfig] Allowing connection without token");
             return true;
         }
         

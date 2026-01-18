@@ -1,5 +1,6 @@
 package imitationgame.chatservice.controller;
 
+import imitationgame.chatservice.dto.GameResultsDTO;
 import imitationgame.chatservice.dto.RoomResponse;
 import imitationgame.chatservice.model.GameRoom;
 import imitationgame.chatservice.model.MessageLog;
@@ -111,6 +112,16 @@ public class RoomController {
         }
     }
 
+    @PostMapping("/{id}/voting/end")
+    public ResponseEntity<Void> endVoting(@PathVariable String id) {
+        try {
+            gameService.endVoting(id);
+            return ResponseEntity.ok().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<RoomResponse> getRoom(@PathVariable String id) {
         try {
@@ -125,6 +136,39 @@ public class RoomController {
     public ResponseEntity<List<MessageLog>> getMessages(@PathVariable String id) {
         var msgs = msgRepo.findAll().stream().filter(m -> id.equals(m.getRoomId())).toList();
         return ResponseEntity.ok(msgs);
+    }
+    
+    /**
+     * Get player IDs in a room (for leaderboard)
+     */
+    @GetMapping("/{id}/players/ids")
+    public ResponseEntity<List<String>> getRoomPlayerIds(@PathVariable String id) {
+        GameRoom room = roomRepo.findById(id).orElse(null);
+        if (room == null) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        List<String> playerIds = room.getPlayers().stream()
+                .filter(p -> !p.isAI()) // Exclude AI
+                .map(RoomPlayer::getOderId)
+                .collect(Collectors.toList());
+        
+        return ResponseEntity.ok(playerIds);
+    }
+
+    /**
+     * Get game results for a finished game
+     */
+    @GetMapping("/{id}/results")
+    public ResponseEntity<GameResultsDTO> getGameResults(@PathVariable String id) {
+        try {
+            GameResultsDTO results = gameService.getGameResults(id);
+            return ResponseEntity.ok(results);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     private RoomResponse toRoomResponse(GameRoom room) {

@@ -1,6 +1,8 @@
 import { motion } from 'motion/react';
 import { Play, Trophy, Target, Zap, User, BarChart3, Settings, LogOut, Brain } from 'lucide-react';
 import { GameScreen, UserData } from '../App';
+import { useState, useEffect } from 'react';
+import { reportingApi, type PlayerStats } from '../services/api';
 
 interface DashboardProps {
   userData: UserData;
@@ -9,6 +11,36 @@ interface DashboardProps {
 }
 
 export function Dashboard({ userData, onStartGame, onNavigate }: DashboardProps) {
+  const [playerStats, setPlayerStats] = useState<PlayerStats | null>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [recentGames, setRecentGames] = useState<any[]>([]);
+
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        setIsLoadingStats(true);
+        const [stats, games] = await Promise.all([
+          reportingApi.getMyStats(),
+          reportingApi.getRecentGames(5)
+        ]);
+        if (stats) setPlayerStats(stats);
+        if (games) setRecentGames(games);
+      } catch (error) {
+        console.error('Failed to load player stats:', error);
+      } finally {
+        setIsLoadingStats(false);
+      }
+    };
+    
+    loadStats();
+  }, []);
+
+  const displayStats = {
+    gamesPlayed: playerStats?.gamesPlayed ?? userData.gamesPlayed,
+    detectRate: playerStats ? playerStats.detectRate.toFixed(1) : userData.detectRate,
+    aiWins: playerStats?.totalWins ?? 0,
+    winRate: playerStats ? playerStats.winRate.toFixed(1) : userData.kdRatio,
+  };
   return (
     <div className="min-h-screen p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -79,7 +111,7 @@ export function Dashboard({ userData, onStartGame, onNavigate }: DashboardProps)
                   </div>
                   <div className="text-center">
                     <h2 className="text-white">{userData.username}</h2>
-                    <p className="text-slate-400">Level 12 Detective</p>
+                    <p className="text-slate-400">Detective</p>
                   </div>
                 </div>
 
@@ -95,28 +127,6 @@ export function Dashboard({ userData, onStartGame, onNavigate }: DashboardProps)
                     <BarChart3 className="w-5 h-5" />
                     <span>Statistics</span>
                   </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick stats */}
-            <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 shadow-xl">
-              <h3 className="text-white mb-4">Recent Progress</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400">Current streak</span>
-                  <span className="text-cyan-400">5 days</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400">XP earned</span>
-                  <span className="text-purple-400">1,247</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400">To Level 13</span>
-                  <span className="text-slate-300">253 XP</span>
-                </div>
-                <div className="w-full bg-slate-800 rounded-full h-2 mt-2">
-                  <div className="bg-gradient-to-r from-cyan-500 to-purple-600 h-2 rounded-full" style={{ width: '67%' }} />
                 </div>
               </div>
             </div>
@@ -156,7 +166,7 @@ export function Dashboard({ userData, onStartGame, onNavigate }: DashboardProps)
                   </div>
                   <div>
                     <p className="text-slate-400">Games Played</p>
-                    <p className="text-white">{userData.gamesPlayed}</p>
+                    <p className="text-white">{isLoadingStats ? '...' : displayStats.gamesPlayed}</p>
                   </div>
                 </div>
               </div>
@@ -168,7 +178,7 @@ export function Dashboard({ userData, onStartGame, onNavigate }: DashboardProps)
                   </div>
                   <div>
                     <p className="text-slate-400">Detection Rate</p>
-                    <p className="text-white">{userData.detectRate}%</p>
+                    <p className="text-white">{isLoadingStats ? '...' : `${displayStats.detectRate}%`}</p>
                   </div>
                 </div>
               </div>
@@ -179,8 +189,8 @@ export function Dashboard({ userData, onStartGame, onNavigate }: DashboardProps)
                     <Brain className="w-6 h-6 text-cyan-400" />
                   </div>
                   <div>
-                    <p className="text-slate-400">Correct Identifications</p>
-                    <p className="text-white">{userData.aiWins}</p>
+                    <p className="text-slate-400">Total Wins</p>
+                    <p className="text-white">{isLoadingStats ? '...' : displayStats.aiWins}</p>
                   </div>
                 </div>
               </div>
@@ -191,8 +201,8 @@ export function Dashboard({ userData, onStartGame, onNavigate }: DashboardProps)
                     <Zap className="w-6 h-6 text-purple-400" />
                   </div>
                   <div>
-                    <p className="text-slate-400">K/D Ratio</p>
-                    <p className="text-white">{userData.kdRatio}</p>
+                    <p className="text-slate-400">Win Rate</p>
+                    <p className="text-white">{isLoadingStats ? '...' : `${displayStats.winRate}%`}</p>
                   </div>
                 </div>
               </div>
@@ -200,27 +210,45 @@ export function Dashboard({ userData, onStartGame, onNavigate }: DashboardProps)
 
             {/* Recent matches */}
             <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 shadow-xl">
-              <h3 className="text-white mb-4">Recent Matches</h3>
+              <h3 className="text-white mb-4">Recent Games</h3>
               <div className="space-y-3">
-                {[
-                  { result: 'Victory', detected: true, time: '2h' },
-                  { result: 'Victory', detected: true, time: '5h' },
-                  { result: 'Defeat', detected: false, time: '1d' },
-                ].map((match, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-4 bg-slate-800/50 rounded-lg border border-slate-700"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-2 h-2 rounded-full ${match.result === 'Victory' ? 'bg-cyan-400' : 'bg-red-400'}`} />
-                      <div>
-                        <p className="text-white">{match.result}</p>
-                        <p className="text-slate-400">{match.detected ? 'AI Detected' : 'AI Not Found'}</p>
+                {isLoadingStats ? (
+                  <div className="text-center text-slate-400 py-8">Loading...</div>
+                ) : recentGames.length === 0 ? (
+                  <div className="text-center text-slate-400 py-8">No recent games</div>
+                ) : (
+                  recentGames.map((game, idx) => {
+                    const duration = game.endedAt && game.startedAt 
+                      ? Math.round((new Date(game.endedAt).getTime() - new Date(game.startedAt).getTime()) / 60000)
+                      : 0;
+                    const timeAgo = game.endedAt 
+                      ? Math.round((Date.now() - new Date(game.endedAt).getTime()) / 3600000)
+                      : 0;
+                    
+                    // Determine if player won this game
+                    const isHumanWin = game.winnerId === 'HUMANS';
+                    const isAIWin = game.winnerId && game.winnerId !== 'HUMANS';
+                    const playerWon = isHumanWin; // Player is human, so they win if humans won
+                    const verdict = playerWon ? 'Victory' : 'Defeat';
+                    const verdictColor = playerWon ? 'text-green-400' : 'text-red-400';
+                    
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between p-4 bg-slate-800/50 rounded-lg border border-slate-700"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`w-2 h-2 rounded-full ${playerWon ? 'bg-green-400' : 'bg-red-400'}`} />
+                          <div>
+                            <p className="text-white">{game.name || 'Game Room'}</p>
+                            <p className="text-slate-400">{game.rounds} rounds · {duration}m · <span className={verdictColor}>{verdict}</span></p>
+                          </div>
+                        </div>
+                        <span className="text-slate-500">{timeAgo}h ago</span>
                       </div>
-                    </div>
-                    <span className="text-slate-500">{match.time} ago</span>
-                  </div>
-                ))}
+                    );
+                  })
+                )}
               </div>
             </div>
           </motion.div>

@@ -84,7 +84,7 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
                   status: 'connected',
                 }];
                 // If this is the first player being added and it's me, I'm the leader
-                if (prev.length === 0 && event.data.oderId === user?.oderId) {
+                if (prev.length === 0 && event.data.oderId === user?.id) {
                   console.log('[Lobby] I am the room leader (first player)');
                   setIsRoomLeader(true);
                 }
@@ -96,13 +96,26 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
               setPlayers(prev => prev.filter(p => p.id !== event.data.oderId));
               break;
             case 'GAME_STARTED':
-              if (gameStarted) return; // Prevent duplicate handling
+              if (gameStarted) {
+                // Game already started, but this might be an update with the correct aiPlayerId
+                const aiPlayerId = event.data.aiPlayerId;
+                if (aiPlayerId) {
+                  console.log('GAME_STARTED update - aiPlayerId:', aiPlayerId, 'myId:', user?.oderId);
+                  // Update role if needed
+                  const isAI = aiPlayerId === user?.oderId;
+                  if (isAI !== (assignedRole === 'AI')) {
+                    console.log('Updating role based on late bot join');
+                    setAssignedRole(isAI ? 'AI' : 'Player');
+                  }
+                }
+                return;
+              }
               gameStarted = true;
               
               // Check if current user is the AI by comparing aiPlayerId
               const aiPlayerId = event.data.aiPlayerId;
-              const isAI = aiPlayerId === user?.oderId;
-              console.log('GAME_STARTED - aiPlayerId:', aiPlayerId, 'myId:', user?.oderId, 'isAI:', isAI);
+              const isAI = aiPlayerId === user?.id;
+              console.log('GAME_STARTED - aiPlayerId:', aiPlayerId, 'myId:', user?.id, 'isAI:', isAI);
               
               setAssignedRole(isAI ? 'AI' : 'Player');
               setTimeout(() => {
@@ -148,12 +161,19 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
               setPlayers(prev => prev.filter(p => p.id !== event.data.oderId));
               break;
             case 'GAME_STARTED':
-              if (gameStarted) return;
+              if (gameStarted) {
+                // Game already started, but this might be an update with the correct aiPlayerId
+                const aiPlayerId = event.data.aiPlayerId;
+                if (aiPlayerId) {
+                  console.log('GAME_STARTED update - aiPlayerId:', aiPlayerId, 'myId:', user?.id);
+                }
+                return;
+              }
               gameStarted = true;
               
               const aiPlayerId = event.data.aiPlayerId;
-              const isAI = aiPlayerId === user?.oderId;
-              console.log('GAME_STARTED - aiPlayerId:', aiPlayerId, 'myId:', user?.oderId, 'isAI:', isAI);
+              const isAI = aiPlayerId === user?.id;
+              console.log('GAME_STARTED - aiPlayerId:', aiPlayerId, 'myId:', user?.id, 'isAI:', isAI);
               
               setAssignedRole(isAI ? 'AI' : 'Player');
               setTimeout(() => {
@@ -171,7 +191,8 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
           id: p.oderId,
           username: p.username,
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.username}`,
-          status: p.status.toLowerCase() as Player['status'],
+          // Map backend status to frontend status: DISCONNECTED (waiting in lobby) -> connected
+          status: (p.status.toLowerCase() === 'disconnected' ? 'connected' : p.status.toLowerCase()) as Player['status'],
         }));
         console.log('[Lobby] Initial players:', initialPlayers);
         setPlayers(initialPlayers);
@@ -180,7 +201,7 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
         const gameAlreadyStarted = initialPlayers.some(p => p.status === 'alive');
         if (gameAlreadyStarted && room.aiPlayerId) {
           console.log('[Lobby] Game already started on join, transitioning immediately. AI:', room.aiPlayerId);
-          const isAI = room.aiPlayerId === user?.oderId;
+          const isAI = room.aiPlayerId === user?.id;
           setAssignedRole(isAI ? 'AI' : 'Player');
           setTimeout(() => {
             onGameStart(room.id, isAI);
@@ -190,13 +211,13 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
         
         // Check if current user is the room leader (first player to join)
         const firstPlayer = initialPlayers[0];
-        const amLeader = firstPlayer?.id === user?.oderId;
+        const amLeader = firstPlayer?.id === user?.id;
         console.log('[Lobby] Am I room leader?', amLeader, 'First player:', firstPlayer?.username);
         setIsRoomLeader(amLeader);
       } else {
         // Add self if no players list
         setPlayers([{
-          id: user?.oderId || 'self',
+          id: user?.id || 'self',
           username: user?.username || 'You',
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.username || 'You'}`,
           status: 'connected',

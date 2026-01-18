@@ -42,8 +42,9 @@ function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<GameScreen>('login');
   const [userData, setUserData] = useState<UserData | null>(null);
   const [eliminatedPlayer, setEliminatedPlayer] = useState<any>(null);
-  const [gameResults, setGameResults] = useState<any>(null);
+  const [gameResults, setGameResults] = useState<string | null>(null);
   const [gameState, setGameState] = useState<GameState>({ roomId: null, currentRound: 1, status: 'IDLE', isAI: false });
+  const [eliminationTimeoutId, setEliminationTimeoutId] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   // Load user profile when authenticated
   useEffect(() => {
@@ -66,6 +67,25 @@ function AppContent() {
   const loadUserProfile = async () => {
     try {
       const profile = await profileApi.getMe();
+
+      // If profile is null/undefined, fallback to Keycloak user if available
+      if (!profile) {
+        if (user) {
+          setUserData({
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`,
+            rank: 'Player',
+            gamesPlayed: 0,
+            detectRate: 0,
+            aiWins: 0,
+            kdRatio: 0,
+          });
+        }
+        return;
+      }
+
       setUserData({
         id: profile.id,
         username: profile.username,
@@ -108,14 +128,26 @@ function AppContent() {
   const handlePlayerEliminated = (player: any) => {
     setEliminatedPlayer(player);
     setCurrentScreen('elimination');
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       setCurrentScreen('chatroom');
+      setEliminationTimeoutId(null);
     }, 3000);
+    setEliminationTimeoutId(timeoutId);
   };
 
-  const handleGameEnd = (results: any) => {
-    setGameResults(results);
+  const handleGameEnd = (roomId: string) => {
+    console.log('[App] handleGameEnd called with roomId:', roomId);
+    
+    // Clear any pending elimination timeout to prevent screen change back to chatroom
+    if (eliminationTimeoutId) {
+      console.log('[App] Clearing elimination timeout');
+      clearTimeout(eliminationTimeoutId);
+      setEliminationTimeoutId(null);
+    }
+    
+    setGameResults(roomId);
     setGameState({ roomId: null, currentRound: 1, status: 'IDLE', isAI: false });
+    console.log('[App] Setting screen to results');
     setCurrentScreen('results');
   };
 
@@ -172,7 +204,7 @@ function AppContent() {
       )}
       {currentScreen === 'results' && gameResults && (
         <ResultsScreen 
-          results={gameResults}
+          roomId={gameResults}
           onPlayAgain={handleStartGame}
           onBackToDashboard={() => setCurrentScreen('dashboard')}
         />

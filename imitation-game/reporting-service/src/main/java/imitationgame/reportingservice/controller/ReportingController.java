@@ -87,6 +87,14 @@ public class ReportingController {
             @RequestParam(defaultValue = "20") int limit) {
         return ResponseEntity.ok(reportingService.getRecentGames(limit));
     }
+    
+    /**
+     * Get room leaderboard for players in a specific room
+     */
+    @GetMapping("/room/{roomId}/leaderboard")
+    public ResponseEntity<List<PlayerStats>> getRoomLeaderboard(@PathVariable String roomId) {
+        return ResponseEntity.ok(reportingService.getRoomLeaderboard(roomId));
+    }
 
     /**
      * Health check endpoint

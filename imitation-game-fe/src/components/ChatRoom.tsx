@@ -25,7 +25,7 @@ interface ChatRoomProps {
   username: string;
   isAI: boolean;
   onPlayerEliminated: (player: Player) => void;
-  onGameEnd: (results: any) => void;
+  onGameEnd: (roomId: string) => void;
   onLeave: () => void;
 }
 
@@ -65,6 +65,7 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
   const subscriptionsRef = useRef<{ unsubRoom?: () => void; unsubEvents?: () => void }>({});
   const hasInitializedRef = useRef(false);
   const timerTriggeredRef = useRef(false);
+  const gameEndedRef = useRef(false);
 
   // Load room data and connect to WebSocket
   useEffect(() => {
@@ -120,6 +121,13 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
         // Subscribe to game events
         const unsubEvents = wsService.subscribeToGameEvents(roomId, (event) => {
           console.log('Game event in ChatRoom:', event);
+          
+          // Ignore events if game has ended (prevents processing stale events)
+          if (gameEndedRef.current && event.type !== 'GAME_ENDED') {
+            console.log('[ChatRoom] Ignoring event after game ended:', event.type);
+            return;
+          }
+          
           switch (event.type) {
             case 'ROUND_STARTED':
               console.log('[ChatRoom] Round started:', event.data.roundNumber);
@@ -144,32 +152,44 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
                   p.id === event.data.oderId ? { ...p, status: 'eliminated' as const } : p
                 );
                 const eliminatedPlayer = updated.find(p => p.id === event.data.oderId);
-                if (eliminatedPlayer) {
-                  // Call callback after state update
-                  setTimeout(() => onPlayerEliminated(eliminatedPlayer), 0);
-                }
+                
+                // Don't show elimination screen - wait for GAME_ENDED event instead
+                // The elimination screen transition causes unsubscribe which makes us miss GAME_ENDED
+                console.log('[ChatRoom] Player eliminated - waiting for GAME_ENDED event');
+                
                 return updated;
               });
               break;
             case 'GAME_ENDED':
               console.log('[ChatRoom] Game ended:', event.data);
-              onGameEnd({
-                winnerId: event.data.winnerId,
-                winCondition: event.data.winCondition,
-                aiPlayerId: event.data.aiPlayerId,
-                aiUsername: event.data.aiUsername,
-              });
+              gameEndedRef.current = true; // Mark game as ended to ignore further events
+              
+              // Immediately unsubscribe to prevent any further events
+              console.log('[ChatRoom] Unsubscribing from events immediately');
+              if (subscriptionsRef.current.unsubRoom) {
+                subscriptionsRef.current.unsubRoom();
+                subscriptionsRef.current.unsubRoom = undefined;
+              }
+              if (subscriptionsRef.current.unsubEvents) {
+                subscriptionsRef.current.unsubEvents();
+                subscriptionsRef.current.unsubEvents = undefined;
+              }
+              
+              console.log('[ChatRoom] Calling onGameEnd with roomId:', roomId);
+              onGameEnd(roomId!);
               break;
             case 'PLAYER_JOINED':
+              console.log('[ChatRoom] Player joined:', event.data);
               setPlayers(prev => {
                 if (prev.some(p => p.id === event.data.oderId)) return prev;
-                return [...prev, {
+                const newPlayer = {
                   id: event.data.oderId,
                   username: event.data.username,
                   avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${event.data.username}`,
                   status: 'alive',
                   votes: 0,
-                }];
+                };
+                return [...prev, newPlayer];
               });
               break;
             case 'PLAYER_LEFT':
@@ -230,14 +250,20 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
             setIsTransitioning(false);
           });
       } else {
-        // Voting phase ended -> Process votes (backend handles this when all votes are in)
-        // If not all votes cast, we need to force end voting
-        console.log('[ChatRoom] Voting phase ended');
-        setIsTransitioning(false);
-        // The backend will process results when votes are complete
-        // For now, just show a message
-        setError('Voting time expired! Waiting for results...');
-        setTimeout(() => setError(null), 3000);
+        // Voting phase ended -> Process votes
+        console.log('[ChatRoom] Voting phase ended, processing results...');
+        roomApi.endVoting(roomId)
+          .then(() => {
+            console.log('[ChatRoom] Voting results processed successfully');
+          })
+          .catch((err) => {
+            console.error('[ChatRoom] Failed to process voting results:', err);
+            setError('Failed to process voting results');
+            setTimeout(() => setError(null), 3000);
+          })
+          .finally(() => {
+            setIsTransitioning(false);
+          });
       }
     }
   }, [timeLeft, isVotingPhase, isTransitioning, roomId]);

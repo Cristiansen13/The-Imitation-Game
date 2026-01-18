@@ -2,7 +2,7 @@ package imitationgame.reportingservice.dto;
 
 public class PlayerStats {
     
-    private String oderId;
+    private String id;
     private String username;
     private int gamesPlayed;
     private int gamesWonAsHuman;
@@ -11,9 +11,10 @@ public class PlayerStats {
     private int correctAIIdentifications;
     private double winRate;
     private double detectRate;
+    private int experiencePoints;
 
-    public String getOderId() { return oderId; }
-    public void setOderId(String oderId) { this.oderId = oderId; }
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
 
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
@@ -38,4 +39,7 @@ public class PlayerStats {
 
     public double getDetectRate() { return detectRate; }
     public void setDetectRate(double detectRate) { this.detectRate = detectRate; }
+    
+    public int getExperiencePoints() { return experiencePoints; }
+    public void setExperiencePoints(int experiencePoints) { this.experiencePoints = experiencePoints; }
 }

@@ -28,12 +28,11 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pgdata-master:/var/lib/postgresql/data
-    command: |
-      postgres
-      -c wal_level=replica
-      -c max_wal_senders=3
-      -c max_replication_slots=3
-      -c hot_standby=on
+    entrypoint: |
+      bash -c "
+      echo 'host replication all 0.0.0.0/0 trust' >> /var/lib/postgresql/data/pg_hba.conf || true;
+      docker-entrypoint.sh postgres -c wal_level=replica -c max_wal_senders=3 -c max_replication_slots=3 -c hot_standby=on
+      "
     networks:
       - backend
     deploy:
@@ -52,6 +51,17 @@ services:
       POSTGRES_DB: main
       PGUSER: user
       PGPASSWORD: pass
+    entrypoint: |
+      bash -c "
+      if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+        rm -rf /var/lib/postgresql/data/*;
+        until pg_isready -h db-master -U user; do sleep 1; done;
+        pg_basebackup -h db-master -U user -D /var/lib/postgresql/data -Fp -Xs -R -P;
+        echo \"primary_conninfo = 'host=db-master port=5432 user=user'\" > /var/lib/postgresql/data/postgresql.auto.conf;
+        touch /var/lib/postgresql/data/standby.signal;
+      fi;
+      docker-entrypoint.sh postgres -c hot_standby=on
+      "
     volumes:
       - pgdata-replica:/var/lib/postgresql/data
     networks:
@@ -103,7 +113,7 @@ services:
     networks:
       - backend
     deploy:
-      replicas: 1
+      replicas: 3
       restart_policy:
         condition: on-failure
       update_config:
@@ -136,6 +146,7 @@ services:
       DB_NAME: main
       DB_USER: user
       DB_PASS: pass
+      KEYCLOAK_URL: http://auth-server:8080
     networks:
       - backend
     deploy:
