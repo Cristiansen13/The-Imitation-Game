@@ -2,7 +2,7 @@ import { Client, IMessage, StompSubscription } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { getToken } from './auth';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:8080/ws';
+const WS_URL = import.meta.env.VITE_WS_URL || '/ws';
 
 export interface ChatMessage {
   oderId: string;

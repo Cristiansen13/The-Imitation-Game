@@ -30,7 +30,7 @@ public class RoomBotManager {
     private final BotConfig config;
     private final OllamaService ollamaService;
     private final ObjectMapper objectMapper;
-    private final KeycloakAuthService authService;
+    private final AuthService authService;
     private final WebClient webClient;
     
     private final Map<String, BotPlayer> activeBots = new ConcurrentHashMap<>();
@@ -38,7 +38,7 @@ public class RoomBotManager {
     private final List<BotCredentials> botCredentialsPool = new ArrayList<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     
-    public RoomBotManager(BotConfig config, OllamaService ollamaService, ObjectMapper objectMapper, KeycloakAuthService authService) {
+    public RoomBotManager(BotConfig config, OllamaService ollamaService, ObjectMapper objectMapper, AuthService authService) {
         this.config = config;
         this.ollamaService = ollamaService;
         this.objectMapper = objectMapper;

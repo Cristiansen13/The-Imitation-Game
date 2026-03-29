@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -136,6 +137,93 @@ public class RoomController {
     public ResponseEntity<List<MessageLog>> getMessages(@PathVariable String id) {
         var msgs = msgRepo.findAll().stream().filter(m -> id.equals(m.getRoomId())).toList();
         return ResponseEntity.ok(msgs);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<RoomResponse> updateRoom(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> updates) {
+        GameRoom room = roomRepo.findById(id).orElse(null);
+        if (room == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (room.getStatus() != GameRoom.GameStatus.WAITING) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        Object name = updates.get("name");
+        if (name instanceof String s && !s.isBlank()) {
+            room.setName(s.trim());
+        }
+
+        Object maxRounds = updates.get("maxRounds");
+        if (maxRounds instanceof Number n) {
+            int value = n.intValue();
+            if (value >= 1 && value <= 20) {
+                room.setMaxRounds(value);
+            }
+        }
+
+        room = roomRepo.save(room);
+        return ResponseEntity.ok(toRoomResponse(room));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteRoom(@PathVariable String id) {
+        GameRoom room = roomRepo.findById(id).orElse(null);
+        if (room == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (room.getStatus() == GameRoom.GameStatus.IN_PROGRESS || room.getStatus() == GameRoom.GameStatus.VOTING) {
+            return ResponseEntity.badRequest().build();
+        }
+        roomRepo.delete(room);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{roomId}/messages/{messageId}")
+    public ResponseEntity<MessageLog> updateMessage(
+            @PathVariable String roomId,
+            @PathVariable String messageId,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal Jwt jwt) {
+        MessageLog message = msgRepo.findById(messageId).orElse(null);
+        if (message == null || !roomId.equals(message.getRoomId())) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String requester = jwt.getSubject();
+        if (!requester.equals(message.getUserId())) {
+            return ResponseEntity.status(403).build();
+        }
+
+        String updated = body.get("message");
+        if (updated == null || updated.trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        message.setMessage(updated.trim());
+        MessageLog saved = msgRepo.save(message);
+        return ResponseEntity.ok(saved);
+    }
+
+    @DeleteMapping("/{roomId}/messages/{messageId}")
+    public ResponseEntity<Void> deleteMessage(
+            @PathVariable String roomId,
+            @PathVariable String messageId,
+            @AuthenticationPrincipal Jwt jwt) {
+        MessageLog message = msgRepo.findById(messageId).orElse(null);
+        if (message == null || !roomId.equals(message.getRoomId())) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String requester = jwt.getSubject();
+        if (!requester.equals(message.getUserId())) {
+            return ResponseEntity.status(403).build();
+        }
+
+        msgRepo.delete(message);
+        return ResponseEntity.noContent().build();
     }
     
     /**

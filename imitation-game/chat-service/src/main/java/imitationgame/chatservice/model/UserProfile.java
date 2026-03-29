@@ -11,7 +11,7 @@ import java.time.Instant;
 public class UserProfile {
 
     @Id
-    private String id; // Keycloak UUID
+    private String id; // UUID from auth-service
     private String username;
     private String email;
     private String role; // PLAYER, ADMIN

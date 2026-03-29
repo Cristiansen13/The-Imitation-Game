@@ -56,5 +56,20 @@
     server: {
       port: 3000,
       open: true,
+      proxy: {
+        '/auth': {
+          target: 'http://localhost:80',
+          changeOrigin: true,
+        },
+        '/api': {
+          target: 'http://localhost:80',
+          changeOrigin: true,
+        },
+        '/ws': {
+          target: 'ws://localhost:80',
+          ws: true,
+          changeOrigin: true,
+        },
+      },
     },
   });

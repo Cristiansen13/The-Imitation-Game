@@ -1,0 +1,62 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: auth-service
+    url: http://auth-service:8000
+    routes:
+      - name: auth-api
+        paths:
+          - /auth
+        strip_path: false
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+
+  - name: chat-service
+    url: http://chat-service:8080
+    routes:
+      - name: chat-api
+        paths:
+          - /api
+        strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+          - PATCH
+      - name: chat-ws
+        paths:
+          - /ws
+        strip_path: false
+        protocols:
+          - http
+          - https
+          - ws
+          - wss
+
+  - name: reporting-service
+    url: http://reporting-service:8083
+    routes:
+      - name: reporting-api
+        paths:
+          - /reports
+        strip_path: false
+        methods:
+          - GET
+          - OPTIONS
+
+  - name: frontend
+    url: http://frontend:80
+    routes:
+      - name: frontend-root
+        paths:
+          - /
+        strip_path: false
+        methods:
+          - GET
+          - HEAD
+          - OPTIONS

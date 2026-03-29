@@ -9,7 +9,7 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: http://auth-server:8080/realms/imitation-game/protocol/openid-connect/certs
+          jwk-set-uri: http://auth-service:8000/auth/jwks
 
 server:
   port: 8082
@@ -17,3 +17,15 @@ server:
 rate-limiter:
   requests-per-minute: 60
   window-size-seconds: 60
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: rate-limiter

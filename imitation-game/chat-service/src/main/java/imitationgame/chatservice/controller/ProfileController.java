@@ -29,7 +29,7 @@ public class ProfileController {
 
     @GetMapping("/me")
     public ResponseEntity<UserProfile> me(@AuthenticationPrincipal Jwt jwt) {
-        String sub = jwt.getSubject(); // Keycloak user id
+        String sub = jwt.getSubject(); // auth-service user id
         String username = jwt.getClaimAsString("preferred_username");
         String email = jwt.getClaimAsString("email");
         // upsert minimal

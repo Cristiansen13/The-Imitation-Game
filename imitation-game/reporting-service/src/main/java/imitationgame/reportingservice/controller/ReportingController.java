@@ -11,10 +11,13 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/reports")
 public class ReportingController {
+
+    private final Map<String, Object> reportSettings = new ConcurrentHashMap<>();
 
     @Autowired
     private ReportingService reportingService;
@@ -104,6 +107,25 @@ public class ReportingController {
         Map<String, String> response = new HashMap<>();
         response.put("status", "UP");
         response.put("service", "reporting-service");
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/settings")
+    public ResponseEntity<Map<String, Object>> updateSettings(@RequestBody Map<String, Object> settings) {
+        reportSettings.putAll(settings);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Reporting settings updated");
+        response.put("settings", reportSettings);
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/cache")
+    public ResponseEntity<Map<String, String>> clearCache() {
+        reportSettings.clear();
+
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "Reporting cache/settings cleared");
         return ResponseEntity.ok(response);
     }
 }

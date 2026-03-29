@@ -2,20 +2,39 @@ version: "3.9"
 
 services:
 
-  auth-server:
-    image: imitation-game-keycloak:1.0
+  auth-service:
+    image: auth-service:1.0
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
-    command: ["start-dev", "--import-realm"]
-    ports:
-      - "8085:8080"
-    volumes:
-      - keycloak-data:/opt/keycloak/data
+      DATABASE_URL: postgresql://authuser:authpass@auth-db:5432/authdb
+      BOT_PASSWORD: aibot123
     networks:
-      - backend
+      - auth-net
+      - auth-db-net
+      - gateway-net
+      - monitoring-net
     deploy:
       replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  auth-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: authuser
+      POSTGRES_PASSWORD: authpass
+      POSTGRES_DB: authdb
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    networks:
+      - auth-db-net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
       restart_policy:
         condition: on-failure
 
@@ -34,7 +53,7 @@ services:
       docker-entrypoint.sh postgres -c wal_level=replica -c max_wal_senders=3 -c max_replication_slots=3 -c hot_standby=on
       "
     networks:
-      - backend
+      - db-net
     deploy:
       replicas: 1
       placement:
@@ -65,9 +84,12 @@ services:
     volumes:
       - pgdata-replica:/var/lib/postgresql/data
     networks:
-      - backend
+      - db-net
     deploy:
       replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
       restart_policy:
         condition: on-failure
 
@@ -76,9 +98,12 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - backend
+      - backend-net
     deploy:
       replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
       restart_policy:
         condition: on-failure
 
@@ -87,12 +112,41 @@ services:
     volumes:
       - ollama-data:/root/.ollama
     networks:
-      - backend
+      - ai-net
     deploy:
       replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
       restart_policy:
         condition: on-failure
     command: ["serve"]
+
+  kong:
+    image: kong:3.6
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+    ports:
+      - "80:8000"
+      - "8001:8001"
+    configs:
+      - source: kong-config
+        target: /etc/kong/kong.yml
+    networks:
+      - gateway-net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
 
   chat-service:
     image: chat-service:1.0
@@ -105,15 +159,22 @@ services:
       DB_NAME: main
       DB_USER: user
       DB_PASS: pass
-      KEYCLOAK_URL: http://auth-server:8080
-      KEYCLOAK_PUBLIC_URL: http://auth-server:8080
+      AUTH_URL: http://auth-service:8000
       REDIS_HOST: redis
       REDIS_PORT: 6379
       RATE_LIMITER_URL: http://rate-limiter:8082
     networks:
-      - backend
+      - frontend-net
+      - backend-net
+      - auth-net
+      - db-net
+      - gateway-net
+      - monitoring-net
     deploy:
       replicas: 3
+      placement:
+        preferences:
+          - spread: node.id
       restart_policy:
         condition: on-failure
       update_config:
@@ -129,9 +190,14 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
     networks:
-      - backend
+      - backend-net
+      - auth-net
+      - monitoring-net
     deploy:
       replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
       restart_policy:
         condition: on-failure
 
@@ -146,11 +212,17 @@ services:
       DB_NAME: main
       DB_USER: user
       DB_PASS: pass
-      KEYCLOAK_URL: http://auth-server:8080
+      AUTH_URL: http://auth-service:8000
     networks:
-      - backend
+      - auth-net
+      - db-net
+      - gateway-net
+      - monitoring-net
     deploy:
       replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
       restart_policy:
         condition: on-failure
 
@@ -159,9 +231,90 @@ services:
     ports:
       - "3000:80"
     networks:
-      - backend
+      - frontend-net
+      - gateway-net
     deploy:
       replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+    networks:
+      - management-net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    configs:
+      - source: prometheus-config
+        target: /etc/prometheus/prometheus.yml
+    networks:
+      - monitoring-net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - grafana-data:/var/lib/grafana
+    configs:
+      - source: grafana-datasource
+        target: /etc/grafana/provisioning/datasources/prometheus.yml
+      - source: grafana-dashboard-provisioner
+        target: /etc/grafana/provisioning/dashboards/dashboards.yml
+      - source: grafana-spring-dashboard
+        target: /etc/grafana/dashboards/spring-boot.json
+    networks:
+      - monitoring-net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8086:8080"
+    networks:
+      - db-net
+      - auth-db-net
+      - management-net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
       restart_policy:
         condition: on-failure
 
@@ -172,9 +325,14 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
     networks:
-      - backend
+      - backend-net
+      - ai-net
+      - monitoring-net
     deploy:
       replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
       restart_policy:
         condition: on-failure
     depends_on:
@@ -182,11 +340,41 @@ services:
       - ollama
 
 networks:
-  backend:
+  gateway-net:
+    driver: overlay
+  frontend-net:
+    driver: overlay
+  backend-net:
+    driver: overlay
+  auth-net:
+    driver: overlay
+  auth-db-net:
+    driver: overlay
+  db-net:
+    driver: overlay
+  ai-net:
+    driver: overlay
+  management-net:
+    driver: overlay
+  monitoring-net:
     driver: overlay
 
+configs:
+  kong-config:
+    file: ./kong/kong.yml
+  prometheus-config:
+    file: ./prometheus/prometheus.yml
+  grafana-datasource:
+    file: ./grafana/provisioning/datasources/prometheus.yml
+  grafana-dashboard-provisioner:
+    file: ./grafana/provisioning/dashboards/dashboards.yml
+  grafana-spring-dashboard:
+    file: ./grafana/dashboards/spring-boot.json
+
 volumes:
-  keycloak-data:
+  auth-db-data:
   pgdata-master:
   pgdata-replica:
   ollama-data:
+  portainer-data:
+  grafana-data:

@@ -17,7 +17,7 @@ public class RoomPlayer {
     @JsonIgnore
     private GameRoom room;
     
-    private String oderId; // Keycloak user ID
+    private String oderId; // user ID from auth-service
     private String username;
     
     @Enumerated(EnumType.STRING)

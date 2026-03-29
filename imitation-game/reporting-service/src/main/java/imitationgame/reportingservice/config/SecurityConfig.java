@@ -33,6 +33,7 @@ public class SecurityConfig {
                 .requestMatchers("/reports/health").permitAll()
                 .requestMatchers("/reports/global").permitAll()
                 .requestMatchers("/reports/leaderboard").permitAll()
+                .requestMatchers("/actuator/**").permitAll()
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder())));

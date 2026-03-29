@@ -5,26 +5,24 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
-public class KeycloakAuthService {
+public class AuthService {
 
     private final WebClient webClient;
     private final String tokenUri;
     private final ConcurrentHashMap<String, TokenInfo> tokenCache = new ConcurrentHashMap<>();
 
-    public KeycloakAuthService(
-            @Value("${keycloak.url:http://auth-server:8080}") String keycloakUrl,
-            @Value("${keycloak.realm:imitation-game}") String realm
+    public AuthService(
+            @Value("${auth.url:http://auth-service:8000}") String authUrl
     ) {
         this.webClient = WebClient.builder().build();
-        this.tokenUri = keycloakUrl + "/realms/" + realm + "/protocol/openid-connect/token";
-        log.info("Keycloak Auth Service initialized with URL: {}", tokenUri);
+        this.tokenUri = authUrl + "/auth/login";
+        log.info("Auth Service initialized with URL: {}", tokenUri);
     }
 
     /**
@@ -45,16 +43,12 @@ public class KeycloakAuthService {
             log.debug("Requesting access token for {} from {}", username, tokenUri);
             JsonNode response = webClient.post()
                     .uri(tokenUri)
-                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                    .body(BodyInserters
-                            .fromFormData("grant_type", "password")
-                            .with("username", username)
-                            .with("password", password)
-                            .with("client_id", "chat-client"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(java.util.Map.of("username", username, "password", password))
                     .retrieve()
-                    .onStatus(status -> !status.is2xxSuccessful(), 
+                    .onStatus(status -> !status.is2xxSuccessful(),
                              clientResponse -> clientResponse.bodyToMono(String.class)
-                                .map(body -> new RuntimeException("Keycloak returned " + clientResponse.statusCode() + ": " + body)))
+                                .map(body -> new RuntimeException("Auth service returned " + clientResponse.statusCode() + ": " + body)))
                     .bodyToMono(JsonNode.class)
                     .block();
             

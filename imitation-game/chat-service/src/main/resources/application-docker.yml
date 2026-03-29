@@ -15,14 +15,23 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: ${KEYCLOAK_URL}/realms/imitation-game/protocol/openid-connect/certs
+          jwk-set-uri: http://auth-service:8000/auth/jwks
   data:
     redis:
       host: ${REDIS_HOST:redis}
       port: ${REDIS_PORT:6379}
 
-keycloak:
-  public-issuer: ${KEYCLOAK_PUBLIC_URL:http://localhost:8085}/realms/imitation-game
-
 rate-limiter:
   url: ${RATE_LIMITER_URL:http://rate-limiter:8082}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: chat-service

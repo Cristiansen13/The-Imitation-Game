@@ -1,7 +1,7 @@
 import { getToken } from './auth';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-const REPORTING_API_URL = import.meta.env.VITE_REPORTING_API_URL || 'http://localhost:8083';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const REPORTING_API_URL = import.meta.env.VITE_REPORTING_API_URL || '/reports';
 
 // Generic fetch wrapper with authentication
 async function fetchWithAuth<T>(
@@ -39,16 +39,16 @@ async function fetchWithAuth<T>(
 
 // Profile API
 export const profileApi = {
-  getMe: () => fetchWithAuth<UserProfile>('/profile/me'),
+  getMe: () => fetchWithAuth<UserProfile>('/profile/me'),  // → /api/profile/me → chat-service /profile/me
 };
 
 // Reporting API
 export const reportingApi = {
-  getMyStats: () => fetchWithAuth<PlayerStats>('/reports/me/stats', {}, REPORTING_API_URL),
-  getPlayerStats: (oderId: string) => fetchWithAuth<PlayerStats>(`/reports/player/${oderId}/stats`, {}, REPORTING_API_URL),
-  getLeaderboard: (limit: number = 10) => fetchWithAuth<LeaderboardResponse>(`/reports/leaderboard?limit=${limit}`, {}, REPORTING_API_URL),
-  getGlobalStats: () => fetchWithAuth<GlobalStats>('/reports/global', {}, REPORTING_API_URL),
-  getRecentGames: (limit: number = 20) => fetchWithAuth<GameSummary[]>(`/reports/games/recent?limit=${limit}`, {}, REPORTING_API_URL),
+  getMyStats: () => fetchWithAuth<PlayerStats>('/me/stats', {}, REPORTING_API_URL),
+  getPlayerStats: (oderId: string) => fetchWithAuth<PlayerStats>(`/player/${oderId}/stats`, {}, REPORTING_API_URL),
+  getLeaderboard: (limit: number = 10) => fetchWithAuth<LeaderboardResponse>(`/leaderboard?limit=${limit}`, {}, REPORTING_API_URL),
+  getGlobalStats: () => fetchWithAuth<GlobalStats>('/global', {}, REPORTING_API_URL),
+  getRecentGames: (limit: number = 20) => fetchWithAuth<GameSummary[]>(`/games/recent?limit=${limit}`, {}, REPORTING_API_URL),
 };
 
 // Room API

@@ -32,6 +32,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/rate-limit/health").permitAll()
                 .requestMatchers("/rate-limit/internal/**").permitAll() // Internal service-to-service calls
+                .requestMatchers("/actuator/**").permitAll()
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder())));

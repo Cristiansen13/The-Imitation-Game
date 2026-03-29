@@ -1,5 +1,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { initKeycloak, login, logout, isAuthenticated, getUserInfo, getToken } from '../services/auth';
+import {
+  initAuth,
+  login as apiLogin,
+  logout as apiLogout,
+  register as apiRegister,
+  isAuthenticated,
+  getUserInfo,
+  getToken,
+} from '../services/auth';
 
 interface User {
   id: string;
@@ -13,7 +21,8 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isLoggedIn: boolean;
-  login: () => void;
+  login: (username: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   getToken: () => string | undefined;
 }
@@ -24,51 +33,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const authenticated = await initKeycloak();
-        if (authenticated) {
-          const userInfo = getUserInfo();
-          if (userInfo) {
-            setUser({
-              id: userInfo.id || '',
-              username: userInfo.username || '',
-              email: userInfo.email || '',
-              name: userInfo.name || userInfo.username || '',
-              roles: userInfo.roles || [],
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Failed to initialize auth', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const refreshUser = () => {
+    const info = getUserInfo();
+    setUser(
+      info
+        ? { id: info.id, username: info.username, email: info.email, name: info.name, roles: info.roles }
+        : null,
+    );
+  };
 
-    init();
+  useEffect(() => {
+    initAuth()
+      .catch((err) => console.error('Failed to initialize auth', err))
+      .finally(() => {
+        refreshUser();
+        setIsLoading(false);
+      });
   }, []);
 
+  const handleLogin = async (username: string, password: string) => {
+    await apiLogin(username, password);
+    refreshUser();
+  };
+
+  const handleRegister = async (username: string, email: string, password: string) => {
+    await apiRegister(username, email, password);
+    await apiLogin(username, password);
+    refreshUser();
+  };
+
   const handleLogout = () => {
+    apiLogout();
     setUser(null);
-    logout();
   };
 
   const value: AuthContextType = {
     user,
     isLoading,
     isLoggedIn: isAuthenticated(),
-    login,
+    login: handleLogin,
+    register: handleRegister,
     logout: handleLogout,
     getToken,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

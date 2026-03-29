@@ -5,23 +5,34 @@ spring:
 server:
   port: 8084
 
-keycloak:
-  url: http://auth-server:8080
-  realm: imitation-game
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ai-bot-service
+
+auth:
+  url: http://auth-service:8000
 
 bot:
   # Chat service connection
   chat-service-url: http://chat-service:8080
   chat-ws-url: ws://chat-service:8080/ws-plain
   
-  # Bot user pool (create these users in Keycloak)
-  # Format: username:password:userId
+  # Bot user pool (pre-seeded in auth-service on startup)
+  # Format: username:password
   bot-pool:
-    - "aibot1:aibot123:will-be-fetched-from-keycloak"
-    - "aibot2:aibot123:will-be-fetched-from-keycloak"
-    - "aibot3:aibot123:will-be-fetched-from-keycloak"
-    - "aibot4:aibot123:will-be-fetched-from-keycloak"
-    - "aibot5:aibot123:will-be-fetched-from-keycloak"
+    - "aibot1:aibot123"
+    - "aibot2:aibot123"
+    - "aibot3:aibot123"
+    - "aibot4:aibot123"
+    - "aibot5:aibot123"
   
   # Ollama configuration
   ollama-url: http://ollama:11434

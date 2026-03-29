@@ -24,10 +24,10 @@ public class JwtConfig {
     public JwtDecoder jwtDecoder() {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
 
-        // Accept tokens from both external (localhost:8085) and internal (auth-server:8080) Keycloak URLs
+        // Accept tokens issued by the custom Python auth-service
         List<String> allowedIssuers = Arrays.asList(
-            "http://localhost:8085/realms/imitation-game",
-            "http://auth-server:8080/realms/imitation-game"
+            "http://auth-service:8000",
+            "http://localhost:8000"
         );
 
         OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(

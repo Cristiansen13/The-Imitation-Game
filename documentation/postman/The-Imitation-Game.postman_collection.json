@@ -1,0 +1,192 @@
+{
+  "info": {
+    "name": "The Imitation Game API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Manual API testing collection for auth, chat, reporting and rate-limiter services."
+  },
+  "variable": [
+    { "key": "gatewayBase", "value": "http://localhost" },
+    { "key": "rateLimiterBase", "value": "http://localhost:8082" },
+    { "key": "token", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "roomId", "value": "" },
+    { "key": "messageId", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "username", "value": "mihai" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Health",
+          "request": { "method": "GET", "url": "{{gatewayBase}}/auth/health" }
+        },
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"email\": \"mihai@example.com\",\n  \"password\": \"secret123\"\n}"
+            },
+            "url": "{{gatewayBase}}/auth/register"
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"secret123\"\n}"
+            },
+            "url": "{{gatewayBase}}/auth/login"
+          }
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{gatewayBase}}/auth/refresh"
+          }
+        },
+        {
+          "name": "UserInfo",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{gatewayBase}}/auth/userinfo"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{gatewayBase}}/auth/logout"
+          }
+        },
+        {
+          "name": "Delete Account",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"secret123\"\n}"
+            },
+            "url": "{{gatewayBase}}/auth/delete-account"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat Rooms",
+      "item": [
+        { "name": "List Rooms", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms" } },
+        { "name": "Create Room", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/create" } },
+        { "name": "Find Or Join", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/join" } },
+        { "name": "Join Room", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}/join" } },
+        { "name": "Leave Room", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}/leave" } },
+        { "name": "Start Game", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}/start" } },
+        { "name": "Vote", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}/vote?targetId={{userId}}" } },
+        { "name": "Start Voting", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}/voting/start" } },
+        { "name": "End Voting", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}/voting/end" } },
+        { "name": "Get Room", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}" } },
+        { "name": "Get Messages", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}/messages" } },
+        {
+          "name": "Update Room",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Room Updated\",\n  \"maxRounds\": 6\n}" },
+            "url": "{{gatewayBase}}/api/rooms/{{roomId}}"
+          }
+        },
+        { "name": "Delete Room", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}" } },
+        {
+          "name": "Update Message",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"Edited message\"\n}" },
+            "url": "{{gatewayBase}}/api/rooms/{{roomId}}/messages/{{messageId}}"
+          }
+        },
+        { "name": "Delete Message", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}/messages/{{messageId}}" } },
+        { "name": "Get Results", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}/results" } },
+        { "name": "Get Room Player IDs", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/rooms/{{roomId}}/players/ids" } }
+      ]
+    },
+    {
+      "name": "Profile",
+      "item": [
+        { "name": "Get My Profile", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/profile/me" } },
+        {
+          "name": "Patch My Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"newmail@example.com\"\n}" },
+            "url": "{{gatewayBase}}/api/profile/me"
+          }
+        },
+        { "name": "Delete My Profile", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/api/profile/me" } }
+      ]
+    },
+    {
+      "name": "Reporting",
+      "item": [
+        { "name": "Leaderboard", "request": { "method": "GET", "url": "{{gatewayBase}}/reports/leaderboard?limit=10" } },
+        { "name": "My Stats", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{gatewayBase}}/reports/me/stats" } },
+        { "name": "Player Stats", "request": { "method": "GET", "url": "{{gatewayBase}}/reports/player/{{userId}}/stats" } },
+        { "name": "Player Stats By Username", "request": { "method": "GET", "url": "{{gatewayBase}}/reports/player/username/{{username}}/stats" } },
+        { "name": "Global", "request": { "method": "GET", "url": "{{gatewayBase}}/reports/global" } },
+        { "name": "Recent Games", "request": { "method": "GET", "url": "{{gatewayBase}}/reports/games/recent?limit=20" } },
+        { "name": "Room Leaderboard", "request": { "method": "GET", "url": "{{gatewayBase}}/reports/room/{{roomId}}/leaderboard" } },
+        { "name": "Health", "request": { "method": "GET", "url": "{{gatewayBase}}/reports/health" } },
+        {
+          "name": "Update Settings",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"leaderboardLimit\": 100\n}" },
+            "url": "{{gatewayBase}}/reports/settings"
+          }
+        },
+        { "name": "Clear Cache", "request": { "method": "DELETE", "url": "{{gatewayBase}}/reports/cache" } }
+      ]
+    },
+    {
+      "name": "Rate Limiter",
+      "item": [
+        { "name": "Check Auth User", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{rateLimiterBase}}/rate-limit/check" } },
+        { "name": "Check User By ID", "request": { "method": "GET", "url": "{{rateLimiterBase}}/rate-limit/check/{{userId}}" } },
+        { "name": "Status", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{rateLimiterBase}}/rate-limit/status" } },
+        { "name": "Reset", "request": { "method": "POST", "url": "{{rateLimiterBase}}/rate-limit/reset/{{userId}}" } },
+        { "name": "Internal Check", "request": { "method": "GET", "url": "{{rateLimiterBase}}/rate-limit/internal/check/{{userId}}" } },
+        { "name": "Health", "request": { "method": "GET", "url": "{{rateLimiterBase}}/rate-limit/health" } }
+      ]
+    }
+  ]
+}
