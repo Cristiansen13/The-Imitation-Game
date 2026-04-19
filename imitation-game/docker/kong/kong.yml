@@ -31,12 +31,11 @@ services:
       - name: chat-ws
         paths:
           - /ws
+          - /ws-plain
         strip_path: false
         protocols:
           - http
           - https
-          - ws
-          - wss
 
   - name: reporting-service
     url: http://reporting-service:8083

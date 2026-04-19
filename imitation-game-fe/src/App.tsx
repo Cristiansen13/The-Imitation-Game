@@ -37,13 +37,38 @@ export interface GameState {
   isAI: boolean;
 }
 
+const APP_STATE_KEY = 'imitation_game_app_state';
+
+interface PersistedAppState {
+  currentScreen: GameScreen;
+  gameState: GameState;
+  gameResults: string | null;
+}
+
+function loadPersistedAppState(): PersistedAppState | null {
+  try {
+    const raw = localStorage.getItem(APP_STATE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedAppState;
+  } catch {
+    return null;
+  }
+}
+
+function shouldPersistScreen(screen: GameScreen): boolean {
+  return screen === 'lobby' || screen === 'chatroom' || screen === 'elimination' || screen === 'results';
+}
+
 function AppContent() {
+  const persisted = loadPersistedAppState();
   const { user, isLoading, isLoggedIn, logout } = useAuth();
-  const [currentScreen, setCurrentScreen] = useState<GameScreen>('login');
+  const [currentScreen, setCurrentScreen] = useState<GameScreen>(persisted?.currentScreen ?? 'login');
   const [userData, setUserData] = useState<UserData | null>(null);
   const [eliminatedPlayer, setEliminatedPlayer] = useState<any>(null);
-  const [gameResults, setGameResults] = useState<string | null>(null);
-  const [gameState, setGameState] = useState<GameState>({ roomId: null, currentRound: 1, status: 'IDLE', isAI: false });
+  const [gameResults, setGameResults] = useState<string | null>(persisted?.gameResults ?? null);
+  const [gameState, setGameState] = useState<GameState>(
+    persisted?.gameState ?? { roomId: null, currentRound: 1, status: 'IDLE', isAI: false }
+  );
   const [eliminationTimeoutId, setEliminationTimeoutId] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   // Load user profile when authenticated
@@ -57,12 +82,36 @@ function AppContent() {
   useEffect(() => {
     if (!isLoading) {
       if (isLoggedIn && userData) {
+        // Keep the user in active game flow on page refresh.
+        if (shouldPersistScreen(currentScreen)) {
+          return;
+        }
         setCurrentScreen('dashboard');
       } else if (!isLoggedIn) {
+        localStorage.removeItem(APP_STATE_KEY);
         setCurrentScreen('login');
       }
     }
-  }, [isLoading, isLoggedIn, userData]);
+  }, [isLoading, isLoggedIn, userData, currentScreen]);
+
+  // Persist active game flow so reload restores room/lobby/results.
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    if (shouldPersistScreen(currentScreen) && gameState.roomId) {
+      localStorage.setItem(
+        APP_STATE_KEY,
+        JSON.stringify({
+          currentScreen,
+          gameState,
+          gameResults,
+        } as PersistedAppState),
+      );
+      return;
+    }
+
+    localStorage.removeItem(APP_STATE_KEY);
+  }, [isLoggedIn, currentScreen, gameState, gameResults]);
 
   const loadUserProfile = async () => {
     try {

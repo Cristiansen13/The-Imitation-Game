@@ -96,13 +96,20 @@ export async function initAuth(): Promise<boolean> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-    if (!res.ok) { clearTokens(); return false; }
+    if (res.status === 401 || res.status === 403) {
+      clearTokens();
+      return false;
+    }
+    if (!res.ok) {
+      // Keep refresh token on transient backend problems.
+      return false;
+    }
     const tokens: AuthTokens = await res.json();
     saveTokens(tokens);
     setupTokenRefresh();
     return true;
   } catch {
-    clearTokens();
+    // Network failure or gateway hiccup: do not destroy refresh token.
     return false;
   }
 }
@@ -167,8 +174,10 @@ function setupTokenRefresh(): void {
       });
       if (res.ok) {
         saveTokens(await res.json());
-      } else {
+      } else if (res.status === 401 || res.status === 403) {
         clearTokens();
+      } else {
+        // Keep current tokens for transient errors.
       }
     } catch {
       // keep existing token until next check

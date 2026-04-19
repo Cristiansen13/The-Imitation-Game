@@ -8,6 +8,8 @@ import imitationgame.chatservice.model.RoomPlayer;
 import imitationgame.chatservice.repository.GameRoomRepository;
 import imitationgame.chatservice.repository.MessageLogRepository;
 import imitationgame.chatservice.service.GameService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -20,6 +22,8 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/rooms")
 public class RoomController {
+
+    private static final Logger log = LoggerFactory.getLogger(RoomController.class);
 
     private final GameRoomRepository roomRepo;
     private final MessageLogRepository msgRepo;
@@ -76,7 +80,15 @@ public class RoomController {
     @PostMapping("/{id}/leave")
     public ResponseEntity<Void> leaveRoom(@PathVariable String id, @AuthenticationPrincipal Jwt jwt) {
         String oderId = jwt.getSubject();
-        gameService.leaveRoom(id, oderId);
+        try {
+            gameService.leaveRoom(id, oderId);
+        } catch (IllegalArgumentException e) {
+            // Leave is idempotent from client perspective.
+            log.debug("Ignoring leave for missing room {} by player {}", id, oderId);
+        } catch (Exception e) {
+            // Avoid surfacing intermittent backend cleanup errors as 500 to clients.
+            log.warn("Leave room failed for room {} and player {}: {}", id, oderId, e.getMessage());
+        }
         return ResponseEntity.ok().build();
     }
 

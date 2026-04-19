@@ -3,6 +3,13 @@ import SockJS from 'sockjs-client';
 import { getToken } from './auth';
 
 const WS_URL = import.meta.env.VITE_WS_URL || '/ws';
+const WS_PLAIN_URL = import.meta.env.VITE_WS_PLAIN_URL || '/ws-plain';
+
+function buildNativeWebSocketUrl(path: string, token?: string | null): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const query = token ? `?access_token=${encodeURIComponent(token)}` : '';
+  return `${protocol}//${window.location.host}${path}${query}`;
+}
 
 export interface ChatMessage {
   oderId: string;
@@ -31,9 +38,10 @@ class WebSocketService {
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       const token = getToken();
+      const nativeWsUrl = buildNativeWebSocketUrl(WS_PLAIN_URL, token);
       
       this.client = new Client({
-        webSocketFactory: () => new SockJS(WS_URL),
+        webSocketFactory: () => new WebSocket(nativeWsUrl),
         connectHeaders: token ? { 
           'Authorization': `Bearer ${token}`,
           'X-Authorization': token  // Fallback header
@@ -56,6 +64,47 @@ class WebSocketService {
         console.error('STOMP error', frame);
         console.error('Error details:', frame.headers, frame.body);
         reject(new Error(frame.headers['message']));
+      };
+
+      this.client.onWebSocketError = () => {
+        // Fallback to SockJS only if plain WebSocket cannot be established.
+        if (!this.connected && this.client) {
+          console.warn('[WebSocket] Native endpoint failed, falling back to SockJS');
+          this.client.deactivate();
+
+          this.client = new Client({
+            webSocketFactory: () => new SockJS(WS_URL),
+            connectHeaders: token ? {
+              'Authorization': `Bearer ${token}`,
+              'X-Authorization': token
+            } : {},
+            debug: (str) => {
+              console.log('STOMP: ' + str);
+            },
+            reconnectDelay: 5000,
+            heartbeatIncoming: 4000,
+            heartbeatOutgoing: 4000,
+          });
+
+          this.client.onConnect = () => {
+            console.log('WebSocket connected (SockJS fallback)');
+            this.connected = true;
+            resolve();
+          };
+
+          this.client.onStompError = (frame) => {
+            console.error('STOMP error', frame);
+            console.error('Error details:', frame.headers, frame.body);
+            reject(new Error(frame.headers['message']));
+          };
+
+          this.client.onDisconnect = () => {
+            console.log('WebSocket disconnected');
+            this.connected = false;
+          };
+
+          this.client.activate();
+        }
       };
 
       this.client.onDisconnect = () => {
