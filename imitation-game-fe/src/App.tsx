@@ -166,7 +166,12 @@ function AppContent() {
   };
 
   const handleStartGame = () => {
+    setGameState(prev => ({ ...prev, status: 'WAITING' }));
     setCurrentScreen('lobby');
+  };
+
+  const handleLobbyRoomJoined = (roomId: string) => {
+    setGameState(prev => ({ ...prev, roomId, status: 'WAITING' }));
   };
 
   const handleGameStart = (roomId: string, isAI: boolean) => {
@@ -233,8 +238,13 @@ function AppContent() {
       )}
       {currentScreen === 'lobby' && (
         <Lobby 
+          initialRoomId={gameState.roomId}
+          onRoomJoined={handleLobbyRoomJoined}
           onGameStart={handleGameStart} 
-          onLeave={() => setCurrentScreen('dashboard')}
+          onLeave={() => {
+            setGameState({ roomId: null, currentRound: 1, status: 'IDLE', isAI: false });
+            setCurrentScreen('dashboard');
+          }}
         />
       )}
       {currentScreen === 'chatroom' && userData && (
@@ -245,7 +255,10 @@ function AppContent() {
           isAI={gameState.isAI}
           onPlayerEliminated={handlePlayerEliminated}
           onGameEnd={handleGameEnd}
-          onLeave={() => setCurrentScreen('dashboard')}
+          onLeave={() => {
+            setGameState({ roomId: null, currentRound: 1, status: 'IDLE', isAI: false });
+            setCurrentScreen('dashboard');
+          }}
         />
       )}
       {currentScreen === 'elimination' && eliminatedPlayer && (

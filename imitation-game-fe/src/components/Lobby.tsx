@@ -12,11 +12,13 @@ interface Player {
 }
 
 interface LobbyProps {
+  initialRoomId?: string | null;
+  onRoomJoined?: (roomId: string) => void;
   onGameStart: (roomId: string, isAI: boolean) => void;
   onLeave?: () => void;
 }
 
-export function Lobby({ onGameStart, onLeave }: LobbyProps) {
+export function Lobby({ initialRoomId = null, onRoomJoined, onGameStart, onLeave }: LobbyProps) {
   const { user } = useAuth();
   const [players, setPlayers] = useState<Player[]>([]);
   const [timeLeft, setTimeLeft] = useState(30);
@@ -30,6 +32,8 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
   const [isRoomLeader, setIsRoomLeader] = useState(false);
   const hasInitialized = useRef(false);
   const LOBBY_DURATION = 30; // seconds - countdown duration once 3+ players
+
+  const getLobbyTimerKey = useCallback((id: string) => `imitation_game_lobby_timer_${id}`, []);
 
   // Debug: Log version to confirm new code is loaded
   useEffect(() => {
@@ -96,6 +100,9 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
               setPlayers(prev => prev.filter(p => p.id !== event.data.oderId));
               break;
             case 'GAME_STARTED':
+              if (roomId) {
+                localStorage.removeItem(getLobbyTimerKey(roomId));
+              }
               if (gameStarted) {
                 // Game already started, but this might be an update with the correct aiPlayerId
                 const aiPlayerId = event.data.aiPlayerId;
@@ -128,11 +135,25 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
       });
       
       console.log('[Lobby] Step 3: Joining room...');
-      // Now join the room - we're already subscribed so we won't miss events
-      const room = await roomApi.joinAny();
+      // On refresh, try to reattach to the previously persisted room first.
+      let room = null;
+      if (initialRoomId) {
+        try {
+          room = await roomApi.join(initialRoomId);
+          console.log('[Lobby] Rejoined persisted room:', initialRoomId);
+        } catch (err) {
+          console.warn('[Lobby] Failed to rejoin persisted room, falling back to joinAny:', err);
+        }
+      }
+
+      // Fallback for first-time entry or when old room is no longer joinable.
+      if (!room) {
+        room = await roomApi.joinAny();
+      }
       console.log('[Lobby] Joined room:', room.id);
       
       setRoomId(room.id);
+      onRoomJoined?.(room.id);
       
       // Subscribe to the specific room we joined (if it wasn't in the list)
       const alreadySubscribed = availableRooms.some((r: GameRoom) => r.id === room.id);
@@ -232,7 +253,7 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
       setError('Failed to connect to game server. Please try again.');
       setIsLoading(false);
     }
-  }, [onGameStart, user]);
+  }, [getLobbyTimerKey, initialRoomId, onGameStart, onRoomJoined, roomId, user]);
 
   // Check if game can start (minimum 3 players) and manage timer
   useEffect(() => {
@@ -240,15 +261,35 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
     setCanStartGame(hasEnoughPlayers);
     
     if (hasEnoughPlayers && !timerStartedAt) {
-      // Start the countdown timer when we reach 3+ players
-      setTimerStartedAt(new Date());
+      // Restore existing timer on refresh, otherwise start a new countdown.
+      if (roomId) {
+        const raw = localStorage.getItem(getLobbyTimerKey(roomId));
+        if (raw) {
+          const restoredAt = new Date(raw);
+          const remaining = calculateTimeLeft(restoredAt);
+          if (!Number.isNaN(restoredAt.getTime()) && remaining > 0) {
+            setTimerStartedAt(restoredAt);
+            setTimeLeft(remaining);
+            return;
+          }
+        }
+      }
+
+      const startedAt = new Date();
+      setTimerStartedAt(startedAt);
       setTimeLeft(LOBBY_DURATION);
+      if (roomId) {
+        localStorage.setItem(getLobbyTimerKey(roomId), startedAt.toISOString());
+      }
     } else if (!hasEnoughPlayers && timerStartedAt) {
       // Reset timer if players drop below 3
       setTimerStartedAt(null);
       setTimeLeft(LOBBY_DURATION);
+      if (roomId) {
+        localStorage.removeItem(getLobbyTimerKey(roomId));
+      }
     }
-  }, [players, timerStartedAt]);
+  }, [players, timerStartedAt, roomId, getLobbyTimerKey, calculateTimeLeft]);
 
   const handleStartGame = useCallback(async () => {
     if (!roomId || !canStartGame || isStartingGame || assignedRole) {
@@ -285,12 +326,13 @@ export function Lobby({ onGameStart, onLeave }: LobbyProps) {
       } catch (err) {
         console.error('Failed to leave room:', err);
       }
+      localStorage.removeItem(getLobbyTimerKey(roomId));
     }
     wsService.disconnect();
     if (onLeave) {
       onLeave();
     }
-  }, [roomId, onLeave]);
+  }, [roomId, onLeave, getLobbyTimerKey]);
 
   // Initialize once on mount only
   useEffect(() => {

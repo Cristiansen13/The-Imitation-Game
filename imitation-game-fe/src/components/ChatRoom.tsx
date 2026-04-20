@@ -45,6 +45,27 @@ function recordMessage(): void {
   messageTimestamps.push(Date.now());
 }
 
+function getRoomTimerKey(roomId: string): string {
+  return `imitation_game_room_timer_${roomId}`;
+}
+
+function persistRoomTimer(roomId: string, phase: 'chat' | 'voting', round: number, startedAtMs: number): void {
+  localStorage.setItem(
+    getRoomTimerKey(roomId),
+    JSON.stringify({ phase, round, startedAtMs }),
+  );
+}
+
+function loadRoomTimer(roomId: string): { phase: 'chat' | 'voting'; round: number; startedAtMs: number } | null {
+  try {
+    const raw = localStorage.getItem(getRoomTimerKey(roomId));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, onGameEnd, onLeave }: ChatRoomProps) {
   const [players, setPlayers] = useState<Player[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -66,6 +87,7 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
   const hasInitializedRef = useRef(false);
   const timerTriggeredRef = useRef(false);
   const gameEndedRef = useRef(false);
+  const currentRoundRef = useRef(1);
 
   // Load room data and connect to WebSocket
   useEffect(() => {
@@ -95,7 +117,22 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
         }
         
         setCurrentRound(room.currentRound || 1);
+        currentRoundRef.current = room.currentRound || 1;
         setMaxRounds(room.maxRounds || 5);
+
+        const phaseFromRoom = room.status === 'VOTING' ? 'voting' : 'chat';
+        const phaseDuration = phaseFromRoom === 'voting' ? 60 : 120;
+        const savedTimer = loadRoomTimer(roomId);
+        if (savedTimer && savedTimer.round === (room.currentRound || 1) && savedTimer.phase === phaseFromRoom) {
+          const elapsed = Math.floor((Date.now() - savedTimer.startedAtMs) / 1000);
+          const remaining = Math.max(0, phaseDuration - elapsed);
+          setIsVotingPhase(phaseFromRoom === 'voting');
+          setTimeLeft(remaining);
+        } else {
+          setIsVotingPhase(phaseFromRoom === 'voting');
+          setTimeLeft(phaseDuration);
+          persistRoomTimer(roomId, phaseFromRoom, room.currentRound || 1, Date.now());
+        }
         
         // Connect to WebSocket if not already connected
         if (!wsService.isConnected()) {
@@ -132,11 +169,13 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
             case 'ROUND_STARTED':
               console.log('[ChatRoom] Round started:', event.data.roundNumber);
               setCurrentRound(event.data.roundNumber);
+              currentRoundRef.current = event.data.roundNumber;
               setTimeLeft(120); // 2 minutes for chat
               setHasVoted(false);
               setIsVotingPhase(false);
               setIsTransitioning(false);
               timerTriggeredRef.current = false; // Reset timer trigger for new round
+              persistRoomTimer(roomId, 'chat', event.data.roundNumber, Date.now());
               break;
             case 'VOTING_STARTED':
               console.log('[ChatRoom] Voting started');
@@ -144,6 +183,7 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
               setTimeLeft(60); // 1 minute for voting
               setIsTransitioning(false);
               timerTriggeredRef.current = false; // Reset timer trigger for voting phase
+              persistRoomTimer(roomId, 'voting', currentRoundRef.current, Date.now());
               break;
             case 'PLAYER_ELIMINATED':
               console.log('[ChatRoom] Player eliminated:', event.data);
@@ -163,6 +203,7 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
             case 'GAME_ENDED':
               console.log('[ChatRoom] Game ended:', event.data);
               gameEndedRef.current = true; // Mark game as ended to ignore further events
+              localStorage.removeItem(getRoomTimerKey(roomId));
               
               // Immediately unsubscribe to prevent any further events
               console.log('[ChatRoom] Unsubscribing from events immediately');
