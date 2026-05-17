@@ -1,0 +1,74 @@
+{
+  "title": "Platform Overview (Kong & Auth)",
+  "uid": "platform-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Gateway (Kong) - Total HTTP Requests/s",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prom-main" },
+      "targets": [
+        {
+          "expr": "sum(rate(kong_http_requests_total[1m])) by (service)",
+          "legendFormat": "{{service}} requests/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Gateway (Kong) - HTTP Errors (4xx/5xx)",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prom-main" },
+      "targets": [
+        {
+          "expr": "sum(rate(kong_http_requests_total{status=~\"[45]..\"}[1m])) by (service, status)",
+          "legendFormat": "{{service}} {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Auth Service - Request Rate",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prom-main" },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"auth-service\"}[1m])) by (handler)",
+          "legendFormat": "{{handler}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Auth Service - Error Rate (4xx/5xx)",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prom-main" },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"auth-service\", status=~\"[45]..\"}[1m])) by (handler, status)",
+          "legendFormat": "{{handler}} {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "mode": "fixed", "fixedColor": "red" } }
+      }
+    }
+  ]
+}

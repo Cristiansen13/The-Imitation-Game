@@ -1,6 +1,14 @@
 _format_version: "3.0"
 _transform: true
 
+plugins:
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+
 services:
   - name: auth-service
     url: http://auth-service:8000

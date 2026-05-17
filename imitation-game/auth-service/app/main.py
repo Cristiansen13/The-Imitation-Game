@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
-
+from prometheus_fastapi_instrumentator import Instrumentator
 from .database import Base, SessionLocal, engine
 from .models import User
 from .routers.auth import router as auth_router
@@ -69,6 +69,10 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(auth_router)
+    
+    # Expose Prometheus metrics
+    Instrumentator().instrument(app).expose(app)
+    
     return app
 
 

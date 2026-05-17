@@ -294,6 +294,8 @@ services:
         target: /etc/grafana/provisioning/dashboards/dashboards.yml
       - source: grafana-spring-dashboard
         target: /etc/grafana/dashboards/spring-boot.json
+      - source: grafana-platform-dashboard
+        target: /etc/grafana/dashboards/platform.json
     networks:
       - monitoring-net
     deploy:
@@ -372,6 +374,8 @@ configs:
     file: ./grafana/provisioning/dashboards/dashboards.yml
   grafana-spring-dashboard:
     file: ./grafana/dashboards/spring-boot.json
+  grafana-platform-dashboard:
+    file: ./grafana/dashboards/platform.json
 
 volumes:
   auth-db-data:
