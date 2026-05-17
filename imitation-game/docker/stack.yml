@@ -16,7 +16,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == manager
+          - node.role == worker
       restart_policy:
         condition: on-failure
 
@@ -103,7 +103,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == manager
+          - node.role == worker
       restart_policy:
         condition: on-failure
 
@@ -117,7 +117,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == manager
+          - node.role == worker
       restart_policy:
         condition: on-failure
     command: ["serve"]
@@ -144,12 +144,12 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == manager
+          - node.role == worker
       restart_policy:
         condition: on-failure
 
   chat-service:
-    image: chat-service:1.0
+    image: chat-service:1.4
     ports:
       - "8080:8080"
     environment:
@@ -173,6 +173,8 @@ services:
     deploy:
       replicas: 3
       placement:
+        constraints:
+          - node.role == worker
         preferences:
           - spread: node.id
       restart_policy:
@@ -197,7 +199,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == manager
+          - node.role == worker
       restart_policy:
         condition: on-failure
 
@@ -222,12 +224,12 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == manager
+          - node.role == worker
       restart_policy:
         condition: on-failure
 
   frontend:
-    image: imitation-game-fe:1.0
+    image: imitation-game-fe:1.4
     ports:
       - "3000:80"
     networks:
@@ -237,7 +239,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == manager
+          - node.role == worker
       restart_policy:
         condition: on-failure
 
@@ -332,7 +334,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == manager
+          - node.role == worker
       restart_policy:
         condition: on-failure
     depends_on:

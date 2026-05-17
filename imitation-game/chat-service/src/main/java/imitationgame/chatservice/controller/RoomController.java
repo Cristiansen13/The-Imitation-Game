@@ -280,6 +280,10 @@ public class RoomController {
         response.setMaxRounds(room.getMaxRounds());
         response.setPlayerCount(room.getPlayers() != null ? room.getPlayers().size() : 0);
         response.setCreatedAt(room.getCreatedAt() != null ? room.getCreatedAt().toString() : null);
+        response.setRoundStartTime(room.getRoundStartTime() != null ? room.getRoundStartTime().toString() : null);
+        response.setCurrentTimeMillis(System.currentTimeMillis());
+        response.setRoundDurationSeconds(room.getRoundDurationSeconds());
+        response.setVotingDurationSeconds(60); // 60 seconds for voting
         
         if (room.getPlayers() != null) {
             response.setPlayers(room.getPlayers().stream()

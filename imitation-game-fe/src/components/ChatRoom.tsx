@@ -80,7 +80,6 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
   const [isVotingPhase, setIsVotingPhase] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const subscriptionsRef = useRef<{ unsubRoom?: () => void; unsubEvents?: () => void }>({});
@@ -88,6 +87,17 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
   const timerTriggeredRef = useRef(false);
   const gameEndedRef = useRef(false);
   const currentRoundRef = useRef(1);
+  const lastSyncTimeRef = useRef(0);
+  const isVotingPhaseRef = useRef(false);
+  const timeLeftRef = useRef(120);
+
+  useEffect(() => {
+    isVotingPhaseRef.current = isVotingPhase;
+  }, [isVotingPhase]);
+
+  useEffect(() => {
+    timeLeftRef.current = timeLeft;
+  }, [timeLeft]);
 
   // Load room data and connect to WebSocket
   useEffect(() => {
@@ -122,16 +132,46 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
 
         const phaseFromRoom = room.status === 'VOTING' ? 'voting' : 'chat';
         const phaseDuration = phaseFromRoom === 'voting' ? 60 : 120;
-        const savedTimer = loadRoomTimer(roomId);
-        if (savedTimer && savedTimer.round === (room.currentRound || 1) && savedTimer.phase === phaseFromRoom) {
-          const elapsed = Math.floor((Date.now() - savedTimer.startedAtMs) / 1000);
-          const remaining = Math.max(0, phaseDuration - elapsed);
-          setIsVotingPhase(phaseFromRoom === 'voting');
-          setTimeLeft(remaining);
-        } else {
-          setIsVotingPhase(phaseFromRoom === 'voting');
-          setTimeLeft(phaseDuration);
-          persistRoomTimer(roomId, phaseFromRoom, room.currentRound || 1, Date.now());
+        
+        // Use server-provided timing for accuracy
+        let calculatedTimeLeft = phaseDuration;
+        if (room.roundStartTime && room.currentTimeMillis) {
+          const roundStartMs = new Date(room.roundStartTime).getTime();
+          const elapsedMs = room.currentTimeMillis - roundStartMs;
+          const elapsedSeconds = Math.floor(elapsedMs / 1000);
+          
+          if (phaseFromRoom === 'voting') {
+            // Voting phase starts after 120 seconds of chat
+            const chatDuration = room.roundDurationSeconds || 120;
+            const votingElapsedSeconds = Math.max(0, elapsedSeconds - chatDuration);
+            calculatedTimeLeft = Math.max(0, 60 - votingElapsedSeconds);
+          } else {
+            // Chat phase
+            calculatedTimeLeft = Math.max(0, phaseDuration - elapsedSeconds);
+          }
+        }
+        
+        setIsVotingPhase(phaseFromRoom === 'voting');
+        setTimeLeft(calculatedTimeLeft);
+        persistRoomTimer(roomId, phaseFromRoom, room.currentRound || 1, Date.now());
+
+        try {
+          const history = await roomApi.getMessages(roomId);
+          if (history && history.length > 0) {
+            const normalizedMessages = history
+              .slice()
+              .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+              .map((entry) => ({
+                id: entry.id,
+                oderId: entry.oderId,
+                username: entry.username || 'Unknown',
+                text: entry.message,
+                timestamp: new Date(entry.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+              }));
+            setMessages(normalizedMessages);
+          }
+        } catch (historyErr) {
+          console.warn('[ChatRoom] Failed to load message history:', historyErr);
         }
         
         // Connect to WebSocket if not already connected
@@ -171,8 +211,10 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
               setCurrentRound(event.data.roundNumber);
               currentRoundRef.current = event.data.roundNumber;
               setTimeLeft(120); // 2 minutes for chat
+              timeLeftRef.current = 120;
               setHasVoted(false);
               setIsVotingPhase(false);
+              isVotingPhaseRef.current = false;
               setIsTransitioning(false);
               timerTriggeredRef.current = false; // Reset timer trigger for new round
               persistRoomTimer(roomId, 'chat', event.data.roundNumber, Date.now());
@@ -180,7 +222,9 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
             case 'VOTING_STARTED':
               console.log('[ChatRoom] Voting started');
               setIsVotingPhase(true);
+              isVotingPhaseRef.current = true;
               setTimeLeft(60); // 1 minute for voting
+              timeLeftRef.current = 60;
               setIsTransitioning(false);
               timerTriggeredRef.current = false; // Reset timer trigger for voting phase
               persistRoomTimer(roomId, 'voting', currentRoundRef.current, Date.now());
@@ -263,51 +307,134 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
     };
   }, [roomId]); // Only depend on roomId, not on callbacks or state
 
-  // Timer with phase transition logic
+  // Periodically sync timer with server time to prevent drift
   useEffect(() => {
-    if (timeLeft > 0) {
-      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-      return () => clearTimeout(timer);
-    } else if (timeLeft === 0 && !timerTriggeredRef.current && !isTransitioning && roomId) {
-      // Timer hit 0 - trigger phase transition
-      timerTriggeredRef.current = true;
-      setIsTransitioning(true);
-      
-      if (!isVotingPhase) {
-        // Chat phase ended -> Start voting
-        console.log('[ChatRoom] Chat phase ended, starting voting...');
-        roomApi.startVoting(roomId)
-          .then(() => {
-            console.log('[ChatRoom] Voting started successfully');
-          })
-          .catch((err) => {
-            console.error('[ChatRoom] Failed to start voting:', err);
-            // If voting already started or error, just set the phase locally
-            setIsVotingPhase(true);
-            setTimeLeft(60);
-            timerTriggeredRef.current = false;
-          })
-          .finally(() => {
+    if (!roomId || !hasInitializedRef.current || gameEndedRef.current) return;
+
+    const syncInterval = setInterval(async () => {
+      try {
+        const room = await roomApi.get(roomId);
+        if (!room) return;
+
+        // If the game has finished on the server, stop syncing and transition the UI to results
+        if (room.status === 'FINISHED') {
+          console.log('[ChatRoom] Sync detected FINISHED status, transitioning to results screen');
+          gameEndedRef.current = true;
+          localStorage.removeItem(getRoomTimerKey(roomId));
+          
+          // Cleanup subscriptions
+          if (subscriptionsRef.current.unsubRoom) {
+            subscriptionsRef.current.unsubRoom();
+            subscriptionsRef.current.unsubRoom = undefined;
+          }
+          if (subscriptionsRef.current.unsubEvents) {
+            subscriptionsRef.current.unsubEvents();
+            subscriptionsRef.current.unsubEvents = undefined;
+          }
+          
+          onGameEnd(roomId);
+          return;
+        }
+
+        // Recalculate time left based on fresh server time
+        const phaseFromRoom = room.status === 'VOTING' ? 'voting' : 'chat';
+        const phaseDuration = phaseFromRoom === 'voting' ? 60 : 120;
+        
+        if (room.roundStartTime && room.currentTimeMillis) {
+          const roundStartMs = new Date(room.roundStartTime).getTime();
+          const elapsedMs = room.currentTimeMillis - roundStartMs;
+          const elapsedSeconds = Math.floor(elapsedMs / 1000);
+          
+          let calculatedTimeLeft = phaseDuration;
+          if (phaseFromRoom === 'voting') {
+            // Voting phase starts after chat duration
+            const chatDuration = room.roundDurationSeconds || 120;
+            const votingElapsedSeconds = Math.max(0, elapsedSeconds - chatDuration);
+            calculatedTimeLeft = Math.max(0, 60 - votingElapsedSeconds);
+          } else {
+            // Chat phase
+            calculatedTimeLeft = Math.max(0, phaseDuration - elapsedSeconds);
+          }
+          
+          // Check if phase has changed
+          const currentPhaseIsVoting = isVotingPhaseRef.current;
+          const newPhaseIsVoting = phaseFromRoom === 'voting';
+          
+          if (currentPhaseIsVoting !== newPhaseIsVoting) {
+            // Phase has changed - server says we should be in different phase
+            console.log('[ChatRoom] Phase sync detected - transitioning from', currentPhaseIsVoting ? 'voting' : 'chat', 'to', newPhaseIsVoting ? 'voting' : 'chat');
+            setIsVotingPhase(newPhaseIsVoting);
+            setTimeLeft(calculatedTimeLeft);
+            isVotingPhaseRef.current = newPhaseIsVoting;
+            timeLeftRef.current = calculatedTimeLeft;
+            timerTriggeredRef.current = false; // Reset so timer can fire for new phase
             setIsTransitioning(false);
-          });
-      } else {
-        // Voting phase ended -> Process votes
-        console.log('[ChatRoom] Voting phase ended, processing results...');
-        roomApi.endVoting(roomId)
-          .then(() => {
-            console.log('[ChatRoom] Voting results processed successfully');
-          })
-          .catch((err) => {
-            console.error('[ChatRoom] Failed to process voting results:', err);
-            setError('Failed to process voting results');
-            setTimeout(() => setError(null), 3000);
-          })
-          .finally(() => {
-            setIsTransitioning(false);
-          });
+            if (newPhaseIsVoting) {
+              setHasVoted(false);
+            }
+          } else {
+            // Same phase - just update time to keep in sync
+            // Only update if difference is significant (more than 2 seconds off)
+            const timeDiff = Math.abs(timeLeftRef.current - calculatedTimeLeft);
+            if (timeDiff > 2) {
+              console.log('[ChatRoom] Time sync - correcting from', timeLeftRef.current, 'to', calculatedTimeLeft);
+              setTimeLeft(calculatedTimeLeft);
+              timeLeftRef.current = calculatedTimeLeft;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[ChatRoom] Failed to sync timer:', err);
       }
-    }
-  }, [timeLeft, isVotingPhase, isTransitioning, roomId]);
+    }, 5000); // Sync every 5 seconds
+
+    return () => clearInterval(syncInterval);
+  }, [roomId]);
+
+  // Timer trigger - calls startVoting/endVoting when timer expires
+  useEffect(() => {
+    if (timeLeft > 0) return;
+    if (timerTriggeredRef.current || !roomId) return;
+    if (gameEndedRef.current) return; // Stop timer if game has ended
+
+    timerTriggeredRef.current = true;
+
+    const triggerPhaseTransition = async () => {
+      // Double-check that game hasn't ended before making API calls
+      if (gameEndedRef.current) {
+        console.log('[ChatRoom] Timer: Skipping phase transition - game already ended');
+        return;
+      }
+
+      try {
+        if (!isVotingPhase) {
+          // Chat ended -> start voting
+          console.log('[ChatRoom] Timer: Starting voting');
+          await roomApi.startVoting(roomId);
+        } else {
+          // Voting ended -> process results
+          console.log('[ChatRoom] Timer: Ending voting');
+          await roomApi.endVoting(roomId);
+        }
+      } catch (err) {
+        // Silently handle errors - the backend may have already processed
+        // this transition (e.g. all players voted before timer expired).
+        // Periodic sync and WebSocket events will correct the frontend state.
+        console.log('[ChatRoom] Timer: Phase transition skipped (server may have already processed)');
+      }
+      // timerTriggeredRef stays true until the next phase event
+      // (VOTING_STARTED, ROUND_STARTED, GAME_ENDED) or periodic sync resets it
+    };
+
+    triggerPhaseTransition();
+  }, [timeLeft, isVotingPhase, roomId]);
+
+  // Simple timer countdown
+  useEffect(() => {
+    if (gameEndedRef.current || timeLeft <= 0) return;
+    const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [timeLeft]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -356,7 +483,7 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
   };
 
   const handleStartVoting = async () => {
-    if (roomId) {
+    if (roomId && !gameEndedRef.current) {
       try {
         await roomApi.startVoting(roomId);
       } catch (err) {
@@ -432,7 +559,7 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
         <div className="flex-1 grid lg:grid-cols-4 gap-0 bg-slate-900/50 backdrop-blur-xl border-x border-slate-800 min-h-0 overflow-hidden">
           {/* Players sidebar */}
           <div className="lg:col-span-1 border-r border-slate-800 p-4 overflow-y-auto">
-            <h3 className="text-white mb-4 flex items-center gap-2">
+            <h3 className="text-lg text-white mb-4 flex items-center gap-2">
               Players
               {isVotingPhase && !hasVoted && (
                 <span className="text-xs text-purple-400">(Click to vote)</span>
@@ -528,7 +655,6 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
             
             {/* Messages - scrollable area with proper containment */}
             <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-              <AnimatePresence>
                 {messages.map((message) => (
                   <motion.div
                     key={message.id}
@@ -558,7 +684,6 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
                     </div>
                   </motion.div>
                 ))}
-              </AnimatePresence>
               <div ref={messagesEndRef} />
             </div>
 
@@ -615,8 +740,8 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
       </div>
 
       {/* Vote confirmation modal */}
-      <AnimatePresence>
-        {showVoteModal && selectedVote && (
+      {showVoteModal && selectedVote && (
+        <AnimatePresence>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -639,7 +764,7 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
                     className="w-full h-full rounded-full border-4 border-slate-900"
                   />
                 </div>
-                
+
                 <div>
                   <h3 className="text-white mb-2">Confirm Vote</h3>
                   <p className="text-slate-400">
@@ -668,8 +793,8 @@ export function ChatRoom({ roomId, oderId, username, isAI, onPlayerEliminated, o
               </div>
             </motion.div>
           </motion.div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>
+      )}
     </div>
   );
 }

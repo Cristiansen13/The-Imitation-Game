@@ -92,36 +92,28 @@ public class GameService {
         player.setRoom(room);
         player.setOderId(oderId);
         player.setUsername(username);
-        // Set status based on room state: DISCONNECTED for WAITING rooms, ALIVE for IN_PROGRESS
-        player.setStatus(room.getStatus() == GameRoom.GameStatus.IN_PROGRESS ? 
-                         RoomPlayer.PlayerStatus.ALIVE : 
+        player.setStatus(room.getStatus() == GameRoom.GameStatus.IN_PROGRESS ?
+                         RoomPlayer.PlayerStatus.ALIVE :
                          RoomPlayer.PlayerStatus.DISCONNECTED);
         player.setAI(false);
         player.setVotesReceived(0);
         player.setJoinedAt(Instant.now());
 
         room.getPlayers().add(player);
-        
-        // If this is a bot joining an in-progress game, reassign AI role to the bot
+
         if (username != null && username.startsWith("aibot") && room.getStatus() == GameRoom.GameStatus.IN_PROGRESS) {
-            // Remove AI flag from previous AI player
             room.getPlayers().stream()
                 .filter(RoomPlayer::isAI)
                 .forEach(p -> p.setAI(false));
-            
-            // Assign AI role to the bot
+
             player.setAI(true);
             room.setAiPlayerId(oderId);
-            
-            System.out.println("[GameService] Bot " + username + " joined in-progress game, reassigning AI role");
-            
-            // Broadcast updated GAME_STARTED event with correct aiPlayerId
+
+            log.info("Bot {} joined in-progress game, reassigning AI role", username);
             broadcastToRoom(roomId, GameEvent.gameStartedWithAiId(roomId, room.getCurrentRound(), room.getMaxRounds(), oderId));
         }
-        
-        gameRoomRepository.save(room);
 
-        // Broadcast player joined event
+        gameRoomRepository.save(room);
         broadcastToRoom(roomId, GameEvent.playerJoined(roomId, oderId, username, room.getPlayers().size()));
 
         return room;
@@ -180,6 +172,7 @@ public class GameService {
         room.setStatus(GameRoom.GameStatus.IN_PROGRESS);
         room.setCurrentRound(1);
         room.setStartedAt(Instant.now());
+        room.setRoundStartTime(Instant.now()); // Set round start time for server-authoritative timing
 
         gameRoomRepository.save(room);
 
@@ -199,6 +192,10 @@ public class GameService {
     public void startVoting(String roomId) {
         GameRoom room = gameRoomRepository.findById(roomId)
                 .orElseThrow(() -> new IllegalArgumentException("Room not found: " + roomId));
+
+        if (room.getStatus() == GameRoom.GameStatus.FINISHED) {
+            throw new IllegalStateException("Game already finished");
+        }
 
         if (room.getStatus() != GameRoom.GameStatus.IN_PROGRESS) {
             throw new IllegalStateException("Game is not in progress");
@@ -286,6 +283,48 @@ public class GameService {
         }
 
         processVotingResults(roomId);
+    }
+
+    /**
+     * Check and auto-transition phase based on server time if needed.
+     * This ensures that clients with out-of-sync timers don't fail operations.
+     */
+    private void checkAndTransitionPhase(GameRoom room) {
+        if (room.getStatus() == GameRoom.GameStatus.IN_PROGRESS && room.getRoundStartTime() != null) {
+            // Check if voting phase should have started
+            long elapsedMs = System.currentTimeMillis() - room.getRoundStartTime().toEpochMilli();
+            int chatDurationMs = room.getRoundDurationSeconds() * 1000; // 120 seconds
+            int votingDurationMs = 60 * 1000; // 60 seconds
+            
+            if (elapsedMs >= chatDurationMs) {
+                // Chat phase is over, auto-transition to voting
+                log.info("Auto-transitioning room {} from IN_PROGRESS to VOTING (elapsed: {}ms)", 
+                         room.getId(), elapsedMs);
+                room.setStatus(GameRoom.GameStatus.VOTING);
+                
+                // Reset votes for this round
+                for (RoomPlayer player : room.getPlayers()) {
+                    if (player.getStatus() == RoomPlayer.PlayerStatus.ALIVE) {
+                        player.setVotesReceived(0);
+                        player.setVotedFor(null);
+                    }
+                }
+                
+                gameRoomRepository.save(room);
+                broadcastToRoom(room.getId(), GameEvent.votingStarted(room.getId(), getAlivePlayers(room)));
+            }
+        } else if (room.getStatus() == GameRoom.GameStatus.VOTING && room.getRoundStartTime() != null) {
+            // Check if voting phase should have ended
+            long elapsedMs = System.currentTimeMillis() - room.getRoundStartTime().toEpochMilli();
+            int chatDurationMs = room.getRoundDurationSeconds() * 1000; // 120 seconds
+            int totalDurationMs = chatDurationMs + (60 * 1000); // 60 seconds for voting
+            
+            if (elapsedMs >= totalDurationMs) {
+                // Voting phase is over, auto-transition to next round
+                log.info("Auto-ending voting for room {} (elapsed: {}ms)", room.getId(), elapsedMs);
+                processVotingResults(room.getId());
+            }
+        }
     }
 
     /**
@@ -465,6 +504,7 @@ public class GameService {
                 room.getId(), room.getCurrentRound(), room.getStatus());
         room.setCurrentRound(room.getCurrentRound() + 1);
         room.setStatus(GameRoom.GameStatus.IN_PROGRESS);
+        room.setRoundStartTime(Instant.now()); // Reset round timer for new round
 
         // Reset votes only for alive players
         for (RoomPlayer player : room.getPlayers()) {

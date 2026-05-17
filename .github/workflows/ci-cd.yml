@@ -3,156 +3,42 @@ name: CI/CD Pipeline
 on:
   push:
     branches:
-      - main
+      - master
       - develop
   pull_request:
     branches:
-      - main
+      - master
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  # ─────────────────────────────────────────────── BUILD STAGE ────────────────────────────────────────────────
-
-  build-chat-service:
+  build-and-push:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: maven
-      
-      - name: Build Chat-Service with Maven
-        run: |
-          cd imitation-game/chat-service
-          mvn -B clean package -DskipTests
-      
-      - name: Upload Chat-Service artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: chat-service-jar
-          path: imitation-game/chat-service/target/*.jar
-          retention-days: 1
-
-  build-rate-limiter:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: maven
-      
-      - name: Build Rate-Limiter with Maven
-        run: |
-          cd imitation-game/rate-limiter
-          mvn -B clean package -DskipTests
-      
-      - name: Upload Rate-Limiter artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rate-limiter-jar
-          path: imitation-game/rate-limiter/target/*.jar
-          retention-days: 1
-
-  build-reporting-service:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: maven
-      
-      - name: Build Reporting-Service with Maven
-        run: |
-          cd imitation-game/reporting-service
-          mvn -B clean package -DskipTests
-      
-      - name: Upload Reporting-Service artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: reporting-service-jar
-          path: imitation-game/reporting-service/target/*.jar
-          retention-days: 1
-
-  build-ai-bot-service:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: maven
-      
-      - name: Build AI-Bot-Service with Maven
-        run: |
-          cd imitation-game/ai-bot-service
-          mvn -B clean package -DskipTests
-      
-      - name: Upload AI-Bot-Service artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ai-bot-service-jar
-          path: imitation-game/ai-bot-service/target/*.jar
-          retention-days: 1
-
-  build-frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 'imitation-game-fe/package-lock.json'
-      
-      - name: Build Frontend
-        run: |
-          cd imitation-game-fe
-          npm ci
-          npm run build
-      
-      - name: Upload Frontend artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-build
-          path: imitation-game-fe/build/
-          retention-days: 1
-
-  # ─────────────────────────────────────────────── DOCKERIZE STAGE ────────────────────────────────────────────────
-
-  dockerize-chat-service:
-    runs-on: ubuntu-latest
-    needs: build-chat-service
     permissions:
       contents: read
       packages: write
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: chat-service
+            context: imitation-game/chat-service
+          - service: rate-limiter
+            context: imitation-game/rate-limiter
+          - service: reporting-service
+            context: imitation-game/reporting-service
+          - service: ai-bot-service
+            context: imitation-game/ai-bot-service
+          - service: auth-service
+            context: imitation-game/auth-service
+          - service: imitation-game-fe
+            context: imitation-game-fe
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Download Chat-Service artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: chat-service-jar
-          path: imitation-game/chat-service/target/
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -168,209 +54,28 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/chat-service
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}
           tags: |
             type=sha,prefix={{branch}}-
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       
-      - name: Build and push Chat-Service Docker image
+      - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v5
         with:
-          context: imitation-game/chat-service
+          context: ${{ matrix.context }}
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/chat-service:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/chat-service:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  dockerize-rate-limiter:
-    runs-on: ubuntu-latest
-    needs: build-rate-limiter
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Download Rate-Limiter artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: rate-limiter-jar
-          path: imitation-game/rate-limiter/target/
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Build and push Rate-Limiter Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: imitation-game/rate-limiter
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/rate-limiter:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/rate-limiter:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  dockerize-reporting-service:
-    runs-on: ubuntu-latest
-    needs: build-reporting-service
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Download Reporting-Service artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: reporting-service-jar
-          path: imitation-game/reporting-service/target/
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Build and push Reporting-Service Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: imitation-game/reporting-service
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/reporting-service:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/reporting-service:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  dockerize-ai-bot-service:
-    runs-on: ubuntu-latest
-    needs: build-ai-bot-service
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Download AI-Bot-Service artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ai-bot-service-jar
-          path: imitation-game/ai-bot-service/target/
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Build and push AI-Bot-Service Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: imitation-game/ai-bot-service
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/ai-bot-service:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/ai-bot-service:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  dockerize-auth-service:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Build and push Auth-Service Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: imitation-game/auth-service
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/auth-service:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/auth-service:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  dockerize-frontend:
-    runs-on: ubuntu-latest
-    needs: build-frontend
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Download Frontend artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-build
-          path: imitation-game-fe/build/
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Build and push Frontend Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: imitation-game-fe
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/imitation-game-fe:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/imitation-game-fe:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ─────────────────────────────────────────────── DEPLOY STAGE ────────────────────────────────────────────────
+            ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
   deploy:
     runs-on: ubuntu-latest
-    needs:
-      - dockerize-chat-service
-      - dockerize-rate-limiter
-      - dockerize-reporting-service
-      - dockerize-ai-bot-service
-      - dockerize-auth-service
-      - dockerize-frontend
-    if: github.ref == 'refs/heads/main'
+    needs: build-and-push
+    if: github.ref == 'refs/heads/master'
     steps:
       - uses: actions/checkout@v4
       

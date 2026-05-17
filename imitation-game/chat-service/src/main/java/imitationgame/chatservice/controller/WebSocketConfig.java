@@ -1,5 +1,6 @@
 package imitationgame.chatservice.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
@@ -27,6 +28,7 @@ import java.util.Map;
 
 @Configuration
 @EnableWebSocketMessageBroker
+@Slf4j
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     
     private final JwtDecoder jwtDecoder;
@@ -70,7 +72,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                                 new UsernamePasswordAuthenticationToken(jwt, null, java.util.Collections.emptyList());
                             accessor.setUser(auth);
                         } catch (Exception e) {
-                            System.err.println("JWT validation failed: " + e.getMessage());
+                            log.debug("JWT validation failed on CONNECT frame: {}", e.getMessage());
                         }
                     }
                 }
@@ -115,7 +117,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 String authHeader = authHeaders.get(0);
                 if (authHeader.startsWith("Bearer ")) {
                     token = authHeader.substring(7);
-                    System.out.println("[WebSocketConfig] Token found in Authorization header");
+                    log.debug("[WebSocketConfig] Token found in Authorization header");
                 }
             }
             
@@ -124,7 +126,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 if (request instanceof ServletServerHttpRequest servletRequest) {
                     token = servletRequest.getServletRequest().getParameter("access_token");
                     if (token != null) {
-                        System.out.println("[WebSocketConfig] Token found in query parameter");
+                        log.debug("[WebSocketConfig] Token found in query parameter");
                     }
                 }
             }
@@ -137,14 +139,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     for (String param : params) {
                         if (param.startsWith("access_token=")) {
                             token = param.substring("access_token=".length());
-                            System.out.println("[WebSocketConfig] Token found in URI query string");
+                            log.debug("[WebSocketConfig] Token found in URI query string");
                             break;
                         }
                     }
                 }
             }
             
-            System.out.println("[WebSocketConfig] Handshake interceptor called. Token present: " + (token != null));
+            log.debug("[WebSocketConfig] Handshake interceptor called. Token present: {}", token != null);
             
             if (token != null && !token.isEmpty()) {
                 try {
@@ -153,16 +155,16 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         new UsernamePasswordAuthenticationToken(jwt, null, java.util.Collections.emptyList());
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                     attributes.put("jwt", jwt);
-                    System.out.println("[WebSocketConfig] Token validated successfully for user: " + jwt.getSubject());
+                    log.debug("[WebSocketConfig] Token validated successfully for user: {}", jwt.getSubject());
                     return true;
                 } catch (Exception e) {
                     // Token validation failed
-                    System.err.println("[WebSocketConfig] Token validation failed: " + e.getMessage());
+                    log.debug("[WebSocketConfig] Token validation failed: {}", e.getMessage());
                     return false;
                 }
             }
             // Allow connections without token (for backwards compatibility with frontend)
-            System.out.println("[WebSocketConfig] Allowing connection without token");
+            log.debug("[WebSocketConfig] Allowing connection without token");
             return true;
         }
         

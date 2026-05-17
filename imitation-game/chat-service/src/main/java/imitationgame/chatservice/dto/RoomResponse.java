@@ -13,6 +13,10 @@ public class RoomResponse {
     private List<PlayerInfo> players;
     private String createdAt;
     private int lobbyDurationSeconds = 60;
+    private String roundStartTime;
+    private long currentTimeMillis;
+    private int roundDurationSeconds = 120;
+    private int votingDurationSeconds = 60;
 
     public static class PlayerInfo {
         private String oderId;
@@ -116,5 +120,37 @@ public class RoomResponse {
 
     public void setLobbyDurationSeconds(int lobbyDurationSeconds) {
         this.lobbyDurationSeconds = lobbyDurationSeconds;
+    }
+
+    public String getRoundStartTime() {
+        return roundStartTime;
+    }
+
+    public void setRoundStartTime(String roundStartTime) {
+        this.roundStartTime = roundStartTime;
+    }
+
+    public long getCurrentTimeMillis() {
+        return currentTimeMillis;
+    }
+
+    public void setCurrentTimeMillis(long currentTimeMillis) {
+        this.currentTimeMillis = currentTimeMillis;
+    }
+
+    public int getRoundDurationSeconds() {
+        return roundDurationSeconds;
+    }
+
+    public void setRoundDurationSeconds(int roundDurationSeconds) {
+        this.roundDurationSeconds = roundDurationSeconds;
+    }
+
+    public int getVotingDurationSeconds() {
+        return votingDurationSeconds;
+    }
+
+    public void setVotingDurationSeconds(int votingDurationSeconds) {
+        this.votingDurationSeconds = votingDurationSeconds;
     }
 }
